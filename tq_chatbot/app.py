@@ -551,10 +551,10 @@ with tab1:
 # ── TAB 2: RESUMEN ────────────────────────────────────────────────────────────
 with tab2:
     st.markdown('<p class="section-title">Resumen Ejecutivo</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-sub">Generado por Gemini 2.0 Flash a partir de la Knowledge Base real de Tecnoquimicas.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-sub">Generado por Gemini 2.5 Flash a partir de la Knowledge Base real de Tecnoquimicas.</p>', unsafe_allow_html=True)
 
     if st.button("Generar Resumen Ejecutivo", type="primary"):
-        with st.spinner("Generando resumen con Gemini 2.0 Flash..."):
+        with st.spinner("Generando resumen con Gemini 2.5 Flash..."):
             st.session_state["summary"] = system.get_summary()
 
     if "summary" in st.session_state and st.session_state["summary"]:
@@ -566,7 +566,7 @@ with tab3:
     st.markdown('<p class="section-sub">10 preguntas frecuentes generadas automaticamente por IA desde la Knowledge Base.</p>', unsafe_allow_html=True)
 
     if st.button("Generar FAQ", type="primary"):
-        with st.spinner("Analizando Knowledge Base con Gemini 2.0 Flash..."):
+        with st.spinner("Analizando Knowledge Base con Gemini 2.5 Flash..."):
             st.session_state["faq"] = system.get_faq()
 
     if "faq" in st.session_state and st.session_state["faq"]:
@@ -584,7 +584,7 @@ with tab4:
         st.markdown("""
 | Componente | Tecnologia |
 |---|---|
-| **LLM** | Google Gemini 2.0 Flash |
+| **LLM** | Google Gemini 2.5 Flash |
 | **Framework** | LangChain |
 | **Web Scraping** | Selenium + Chrome + BeautifulSoup4 |
 | **Interfaz** | Streamlit |
@@ -601,7 +601,7 @@ www.tqconfiable.com  (12 URLs verificadas)
 knowledge_base.py -> knowledge_base.txt
 Limpieza+Chunking    chunks.json
         |
-  qa_system.py  (Gemini 2.0 Flash + LangChain)
+  qa_system.py  (Gemini 2.5 Flash + LangChain)
    |        |        |
 Resumen    FAQ    Q&A Contextual
         |
