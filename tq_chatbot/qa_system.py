@@ -22,7 +22,13 @@ from langchain_core.output_parsers import StrOutputParser
 
 
 def get_llm() -> ChatGoogleGenerativeAI:
-    api_key = os.getenv("GOOGLE_API_KEY")
+    #api_key = os.getenv("GOOGLE_API_KEY")
+    try:
+        import streamlit as st
+        api_key = st.secrets["GOOGLE_API_KEY"]
+    except Exception:
+        api_key = os.getenv("GOOGLE_API_KEY")
+    
     if not api_key:
         raise EnvironmentError(
             "\n No se encontró GOOGLE_API_KEY.\n"
