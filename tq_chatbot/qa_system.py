@@ -45,7 +45,7 @@ def get_llm() -> ChatGoogleGenerativeAI:
 
 
 def load_knowledge_base() -> str:
-    kb_path = Path("knowledge_base.txt")
+    kb_path = Path(__file__).parent / "knowledge_base.txt"
     if not kb_path.exists():
         raise FileNotFoundError(
             "\n No se encontró knowledge_base.txt\n"
