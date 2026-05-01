@@ -4,6 +4,8 @@ Sistema de Preguntas y Respuestas (Q&A) sobre **Tecnoquímicas S.A. (TQ)** const
 
 El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarma.com`, la consolida en una base de conocimiento textual, y la usa como contexto único de un LLM para responder preguntas, generar un resumen ejecutivo y un panel de FAQ - todo con prompts diseñados para minimizar alucinaciones.
 
+> **Sub-proyecto paralelo `integrated-chat/`:** alternativa **client-side** que entrega el mismo Q&A pero corriendo enteramente en el navegador con la API nativa de IA de Chrome (Prompt API + Gemini Nano on-device). Empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada en los sitios reales de TQ vía una extensión Chrome MV3. Cero costo de inferencia, cero red para responder, datos del usuario nunca salen del navegador. Es independiente del flujo Python documentado abajo. Detalles en [`integrated-chat/README.md`](./integrated-chat/README.md).
+
 ---
 
 ## Características
