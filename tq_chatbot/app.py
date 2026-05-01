@@ -4,9 +4,12 @@ Interfaz Streamlit premium para el Sistema Q&A de TQ Confiable - Tecnoquimicas.
 Ejecutar: python -m streamlit run app.py
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import streamlit as st
 from qa_system import TQKnowledgeSystem
-
 st.set_page_config(
     page_title="TQ Confiable - Asistente Virtual",
     layout="wide",
