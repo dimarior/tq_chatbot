@@ -1,8 +1,8 @@
 # TQ-Confiable - Sistema Q&A Semantico para Tecnoquimicas S.A.
 
-Sistema de Preguntas y Respuestas (Q&A) sobre **Tecnoquímicas S.A. (TQ)** construido sobre Google Gemini 2.5 Flash y LangChain, con interfaz Streamlit. Trabajo académico para el **Taller 1 — Técnicas Avanzadas de IA Aplicadas en Modelos de Lenguaje**.
+Sistema de Preguntas y Respuestas (Q&A) sobre **Tecnoquímicas S.A. (TQ)** construido sobre Google Gemini 2.5 Flash y LangChain, con interfaz Streamlit. Trabajo académico para el **Taller 1 - Técnicas Avanzadas de IA Aplicadas en Modelos de Lenguaje**.
 
-El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarma.com`, la consolida en una base de conocimiento textual, y la usa como contexto único de un LLM para responder preguntas, generar un resumen ejecutivo y un panel de FAQ — todo con prompts diseñados para minimizar alucinaciones.
+El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarma.com`, la consolida en una base de conocimiento textual, y la usa como contexto único de un LLM para responder preguntas, generar un resumen ejecutivo y un panel de FAQ - todo con prompts diseñados para minimizar alucinaciones.
 
 ---
 
@@ -41,11 +41,11 @@ El repositorio tiene dos niveles: la **raíz** contiene metadata del proyecto Py
 |---|---|
 | `pyproject.toml` | Metadata del proyecto y dependencias (uv / pip) |
 | `uv.lock` | Lock file de `uv` |
-| `main.py` | Stub — no es el entrypoint real |
+| `main.py` | Stub - no es el entrypoint real |
 | `README.md` | Este archivo |
 | `CLAUDE.md` | Guía para Claude Code |
 
-**Subdirectorio `tq_chatbot/` — código de la aplicación:**
+**Subdirectorio `tq_chatbot/` - código de la aplicación:**
 
 | Archivo | Etapa | Rol |
 |---|---|---|
@@ -53,7 +53,7 @@ El repositorio tiene dos niveles: la **raíz** contiene metadata del proyecto Py
 | `knowledge_base.py` | 2 | Limpieza, deduplicación y chunking del texto extraído |
 | `qa_system.py` | 3 | Cadenas LangChain + 3 prompts (`SUMMARY`, `FAQ`, `QA`) |
 | `app.py` | 4 | Interfaz Streamlit con 4 pestañas |
-| `requirements.txt` | — | Dependencias (alternativa al `pyproject.toml` raíz) |
+| `requirements.txt` | - | Dependencias (alternativa al `pyproject.toml` raíz) |
 | `raw_data.json` | generado | Salida de `scraper.py` |
 | `knowledge_base.txt` | generado | Salida de `knowledge_base.py` (consumido por `qa_system.py`) |
 | `chunks.json` | generado | Salida de `knowledge_base.py` (no consumido actualmente) |
@@ -69,7 +69,7 @@ El repositorio tiene dos niveles: la **raíz** contiene metadata del proyecto Py
 
 - Python 3.14
 - Google Chrome o Chromium instalado localmente (para Selenium)
-- Una API Key de Google Gemini — [obtenla gratis aquí](https://aistudio.google.com/app/apikey)
+- Una API Key de Google Gemini - [obtenla gratis aquí](https://aistudio.google.com/app/apikey)
 
 ### 1. Clonar e instalar dependencias
 
@@ -138,7 +138,7 @@ La aplicación abrirá en `http://localhost:8501`.
 
 El sistema combina una **pipeline de construcción offline** (scraping → consolidación de la base de conocimiento) con una **interacción online** entre el usuario y Gemini mediada por LangChain. Por eso se documenta con dos diagramas complementarios: un **flowchart** para la arquitectura de datos y un **sequence diagram** para el runtime de Q&A.
 
-### Diagrama de arquitectura — pipeline de datos
+### Diagrama de arquitectura - pipeline de datos
 
 ```mermaid
 flowchart LR
@@ -177,7 +177,7 @@ flowchart LR
     APP --> User
 ```
 
-### Diagrama de secuencia — runtime de una pregunta
+### Diagrama de secuencia - runtime de una pregunta
 
 ```mermaid
 sequenceDiagram
@@ -214,8 +214,8 @@ sequenceDiagram
 
 Todas las URLs scrapeadas son **fuentes oficiales** de Tecnoquímicas:
 
-- **`tqconfiable.com`** — sitio corporativo principal: identidad, misión/visión, historia, innovación, sostenibilidad, ofertas laborales, contacto, gobierno corporativo y un archivo completo de noticias.
-- **`tqfarma.com`** — portal médico oficial: vademécum (MK / OTC), medicamentos A–Z, biblioteca científica, guías de práctica clínica.
+- **`tqconfiable.com`** - sitio corporativo principal: identidad, misión/visión, historia, innovación, sostenibilidad, ofertas laborales, contacto, gobierno corporativo y un archivo completo de noticias.
+- **`tqfarma.com`** - portal médico oficial: vademécum (MK / OTC), medicamentos A–Z, biblioteca científica, guías de práctica clínica.
 
 Las listas completas de URLs están en `URLS_SELENIUM` y `URLS_REQUESTS` dentro de `scraper.py`.
 
@@ -225,7 +225,7 @@ Las listas completas de URLs están en `URLS_SELENIUM` y `URLS_REQUESTS` dentro 
 
 ### Añadir una nueva sección al scraping
 
-1. Agregar la URL a `URLS_SELENIUM` o `URLS_REQUESTS` en `scraper.py` (usar prefijo `tqfarma_` si la fuente es tqfarma.com — `knowledge_base.py` lo usa para etiquetar el origen).
+1. Agregar la URL a `URLS_SELENIUM` o `URLS_REQUESTS` en `scraper.py` (usar prefijo `tqfarma_` si la fuente es tqfarma.com - `knowledge_base.py` lo usa para etiquetar el origen).
 2. Añadir la nueva clave de sección a `ORDER_PRIORITY` en `knowledge_base.py` para controlar su posición; si no se añade, queda al final.
 3. Re-ejecutar la pipeline: `python scraper.py && python knowledge_base.py`.
 
@@ -256,7 +256,7 @@ En `qa_system.load_knowledge_base()`, el slice `[:15000]` limita cuánto context
 ## Limitaciones conocidas
 
 - El truncamiento a 15 000 caracteres en `load_knowledge_base` puede dejar fuera secciones de menor prioridad (típicamente noticias antiguas).
-- `chunks.json` se genera pero no se consume — no hay retrieval semántico implementado.
+- `chunks.json` se genera pero no se consume - no hay retrieval semántico implementado.
 - El scraper depende de la estructura HTML actual de los sitios; cambios en el frontend de TQ requerirán ajustes en `extract_text` o en el listado de términos de navegación (`NAV_EXACT`).
 - Selenium requiere Chrome instalado localmente y conexión saliente a internet para `webdriver-manager`.
 
