@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo · &lt;company-chat&gt;</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        max-width: 760px;
+        margin: 40px auto;
+        padding: 0 20px;
+        line-height: 1.6;
+        color: #1a1a1a;
+        background: #ffffff;
+      }
+      h1 { color: #0033A0; margin-bottom: 4px; }
+      .lead { color: #6b7280; margin-top: 0; }
+      h2 { margin-top: 32px; color: #111; }
+      code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+      ul { padding-left: 20px; }
+      footer {
+        margin-top: 64px;
+        padding-top: 16px;
+        border-top: 1px solid #e5e7eb;
+        color: #6b7280;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Demo del Web Component <code>&lt;company-chat&gt;</code></h1>
+    <p class="lead">Página de prueba para validar el componente fuera de la extensión. Sirve este archivo por HTTP (no <code>file://</code>) — los módulos ES lo requieren.</p>
+
+    <article>
+      <h2>Sobre Tecnoquímicas</h2>
+      <p>
+        Tecnoquímicas S.A. es una compañía colombiana fundada en 1934, con sede principal en Cali.
+        Opera en el sector farmacéutico y de consumo, con presencia en varios países de la región.
+      </p>
+
+      <h2>Áreas de negocio</h2>
+      <ul>
+        <li>TQ Farma — medicamentos y vademécum.</li>
+        <li>Consumo masivo.</li>
+        <li>Alianzas estratégicas con laboratorios internacionales.</li>
+      </ul>
+
+      <h2>Cómo probar este demo</h2>
+      <ol>
+        <li>Click en la burbuja azul abajo a la derecha.</li>
+        <li>Acepta el disclaimer de privacidad la primera vez.</li>
+        <li>Manda una pregunta; en esta capa la respuesta es un <strong>mock</strong>.</li>
+      </ol>
+      <p>La integración con Chrome Built-in AI llega en la siguiente capa.</p>
+    </article>
+
+    <footer>
+      Capa 2 · UI con respuestas mock · sin Chrome Built-in AI todavía.
+    </footer>
+
+    <company-chat></company-chat>
+    <script type="module" src="../component/index.js"></script>
+  </body>
+</html>
