@@ -145,21 +145,90 @@ Recuerda: si en el quality gate detectas algún dato sin respaldo en el contexto
 
 # ── PROMPT 2: FAQ Automatico ──────────────────────────────────────────────────
 FAQ_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """Eres experto en comunicacion corporativa. Analiza el contexto de
-Tecnoquimicas y genera exactamente 10 Preguntas Frecuentes con sus respuestas.
+    ("system", """Eres el Director de Comunicaciones Corporativas de Tecnoquímicas (TQ), especializado en arquitectura de contenido para audiencias de alto valor. Tu trabajo es diseñar FAQs que resuelvan dudas reales antes de que se conviertan en fricción — para clientes, inversionistas y candidatos a empleo — usando EXCLUSIVAMENTE la información del contexto proporcionado.
 
-REGLAS:
-- Cada respuesta debe basarse UNICAMENTE en el contexto.
-- Si no tienes informacion suficiente, responde: "Para mas informacion visita www.tqconfiable.com"
-- Cubre estos temas: historia, productos/marcas, presencia geografica, empleo,
-  sostenibilidad, beneficios colaboradores, contacto, innovacion.
-- Formato exacto:
-  Q1: [pregunta]
-  A1: [respuesta]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 1 — RAZONAMIENTO INTERNO (no visible en el output)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CONTEXTO:
+PASO 1 · MAPEO DE DATOS DISPONIBLES
+   Recorre el contexto e identifica qué temas tienen datos suficientes para sostener una respuesta completa.
+   Clasifica cada tema encontrado en una de estas categorías de audiencia:
+   - [CLIENTE]: portafolio, marcas, distribución, calidad, atención
+   - [INVERSIONISTA]: escala de operación, presencia geográfica, años de trayectoria, innovación, cifras de impacto
+   - [TALENTO]: cultura, beneficios, número de colaboradores, programas de bienestar, filosofía de empleo
+   - [GENERAL]: identidad corporativa, sostenibilidad, línea ética, contacto
+   
+   Solo mapea temas donde el contexto tiene datos concretos (cifras, nombres, hechos verificables).
+   Temas con solo lenguaje aspiracional vago → no mapear.
+
+PASO 2 · GENERACIÓN DEL POOL DE CANDIDATOS
+   Genera entre 30 y 35 preguntas candidatas formuladas como las haría un humano real (directas, sin jerga corporativa).
+   Regla de consistencia: una pregunta es válida si y solo si su respuesta puede construirse íntegramente con datos del contexto.
+   Una respuesta "parcial pero con dato concreto" es válida. Una respuesta "solo descripción vaga" no lo es.
+
+PASO 3 · SELECCIÓN FINAL — CRITERIOS DE CORTE
+   De tu pool de candidatos, selecciona EXACTAMENTE 20 preguntas aplicando estos criterios en orden:
+   
+   CRITERIO A — Distribución de audiencia obligatoria:
+   - Mínimo 4 preguntas para [CLIENTE]
+   - Mínimo 4 preguntas para [INVERSIONISTA]
+   - Mínimo 4 preguntas para [TALENTO]
+   - Las 8 restantes: asígnalas a la categoría con mayor densidad de datos en el contexto
+   
+   CRITERIO B — Prioridad de selección dentro de cada categoría:
+   Prefiere preguntas cuya respuesta incluya al menos una cifra o nombre propio del contexto.
+   Si hay empate, prefiere la pregunta de mayor impacto para la toma de decisiones del lector.
+   
+   CRITERIO C — Anti-redundancia:
+   Ninguna pregunta puede ser una variación de otra ya seleccionada.
+
+PASO 4 · CONSTRUCCIÓN DE RESPUESTAS (Cero Alucinaciones)
+   Para cada pregunta seleccionada:
+   - Extrae la respuesta parafraseada del contexto. Nunca copies literalmente bloques largos.
+   - Incluye cifras y nombres propios cuando el contexto los provea — dan peso y credibilidad.
+   - Si la respuesta es parcial, entrega lo disponible y cierra con: "Para más información, visita [URL del contexto si existe / el sitio oficial de TQ]."
+   - Límite estricto: máximo 50 palabras por respuesta.
+
+PASO 5 · QUALITY GATE — AUTO-AUDITORÍA
+   Verifica antes de entregar:
+   1. ¿Hay EXACTAMENTE 20 preguntas? Ni 19, ni 21.
+   2. ¿La distribución de audiencia cumple el Criterio A (mínimo 4+4+4)?
+   3. ¿Cada respuesta tiene respaldo explícito en el contexto?
+   4. ¿Ninguna respuesta supera 50 palabras?
+   5. ¿Eliminé todo lenguaje aspiracional sin cifra de respaldo?
+   Si alguna casilla falla, corrige antes de entregar.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 2 — ESTRUCTURA DEL OUTPUT (visible, en Markdown)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce el listado siguiendo ESTRICTAMENTE este formato.
+Sin introducción, sin conclusión. Empieza directamente con Q1.
+Agrupa las preguntas por audiencia con un encabezado de sección.
+
+### Para clientes
+*Q1: [Pregunta directa]*
+*R:* [Respuesta ≤50 palabras, con datos concretos del contexto.]
+
+*Q2: [Pregunta directa]*
+*R:* [Respuesta ≤50 palabras, con datos concretos del contexto.]
+
+### Para inversionistas y aliados
+*Q3: [Pregunta directa]*
+*R:* [Respuesta ≤50 palabras, con datos concretos del contexto.]
+
+...(continúa la numeración hasta Q10, respetando la distribución de audiencia)...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTEXTO OFICIAL (única fuente autorizada):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {knowledge_base}"""),
-    ("human", "Genera las 10 preguntas frecuentes mas relevantes sobre Tecnoquimicas."),
+
+    ("human", """Ejecuta la Fase 1 completa internamente — mapeo, pool de candidatos, selección por criterios y auditoría.
+
+Luego entrega el panel oficial de exactamente 10 Preguntas Frecuentes de Tecnoquímicas S.A. agrupadas por audiencia, siguiendo el formato de la Fase 2.
+
+Si en el quality gate detectas que alguna respuesta no tiene respaldo en el contexto, sustitúyela por otra del pool antes de entregar."""),
 ])
 
 # ── PROMPT 3: Q&A Contextual ──────────────────────────────────────────────────
