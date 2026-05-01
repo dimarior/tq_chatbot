@@ -1,15 +1,12 @@
 """
 app.py
 Interfaz Streamlit premium para el Sistema Q&A de TQ Confiable - Tecnoquimicas.
-Ejecutar: python -m streamlit run app.py
+Ejecutar: streamlit run app.py
 """
-
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import streamlit as st
 from qa_system import TQKnowledgeSystem
+
 st.set_page_config(
     page_title="TQ Confiable - Asistente Virtual",
     layout="wide",
@@ -483,24 +480,32 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 EXAMPLES = [
-    "Cuando fue fundada Tecnoquimicas?",
-    "Cuales son todas las marcas de TQ?",
-    "Que es la marca MK y en que paises esta?",
-    "En que paises opera Tecnoquimicas?",
-    "Que hace TQ por el medio ambiente?",
-    "Que beneficios tienen los empleados?",
-    "Como aplicar a una vacante en TQ?",
-    "Cuantos colaboradores tiene TQ?",
-    "Que estudios respaldan los productos TQ?",
-    "Que es el programa Nuestros Hijos a la U?",
-    "Como contacto a Tecnoquimicas?",
-    "Que es la linea etica de TQ?",
+    "¿En qué año se fundó Tecnoquímicas y en qué ciudad?",
+    "¿Cuáles son los países donde TQ tiene presencia directa?",
+    "¿Cuántos colaboradores tiene la compañía en total?",
+    "Nombra 5 marcas destacadas de consumo masivo de TQ.",
+    "¿Qué iniciativas de energía solar y sostenibilidad tiene TQ?",
+    "¿Qué es el programa 'Nuestros Hijos a la U'?",
+    "¿Qué servicios ofrece el Centro de Estimulación y Desarrollo (CED TQ)?",
+    "¿En qué consiste el programa de pañales para prematuros de Winny?",
+    "¿Qué es Genetest y a qué especialidades médicas ayuda?",
+    "¿Cuántos estudios científicos externos ha realizado TQ desde 1998?",
+    "¿Cuáles son los pilares fundamentales del Credo de TQ?",
+    "¿Qué tipo de productos se fabrican en la planta Tecnofar en Villa Rica?",
+    "¿Cuál es el propósito social de la marca Content para adultos mayores?",
+    "¿Qué productos amigables con el medio ambiente ofrece TQ Agro?",
+    "¿Cómo apoya TQ la educación en comunidades como Villa Rica y la U. Icesi?",
+    "¿Cómo se puede contactar a la Línea Ética de TQ?",
+    "¿Qué acciones tomó Tecnoquímicas durante la pandemia del COVID-19?",
+    "¿De qué trata la colección 'Historia de la Medicina en Colombia'?",
+    "¿Qué certificaciones ambientales tienen las plantas de TQ?",
+    "¿Cuál es la visión corporativa de Tecnoquímicas para el año 2032?"
 ]
 
 # ── TAB 1: Q&A ────────────────────────────────────────────────────────────────
 with tab1:
     st.markdown('<p class="section-title">Consulta al Asistente</p>', unsafe_allow_html=True)
-    st.markdown('<p class="</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-sub">Hazle cualquier pregunta al asistente basándote en la información recopilada de Tecnoquímicas.</p>', unsafe_allow_html=True)
 
     col_main, col_ex = st.columns([3, 1], gap="large")
 
@@ -554,14 +559,14 @@ with tab1:
 # ── TAB 2: RESUMEN ────────────────────────────────────────────────────────────
 with tab2:
     st.markdown('<p class="section-title">Resumen Ejecutivo</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-sub">Generado por Gemini 2.5 Flash a partir de la Knowledge Base real de Tecnoquimicas.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-sub">Generado por Gemini Flash a partir de la Knowledge Base real de Tecnoquimicas.</p>', unsafe_allow_html=True)
 
     if st.button("Generar Resumen Ejecutivo", type="primary"):
-        with st.spinner("Generando resumen con Gemini 2.5 Flash..."):
+        with st.spinner("Generando resumen con Gemini Flash..."):
             st.session_state["summary"] = system.get_summary()
 
     if "summary" in st.session_state and st.session_state["summary"]:
-        st.markdown(st.session_state["summary"])
+        st.markdown(f'<div class="generated-content">{st.session_state["summary"]}</div>', unsafe_allow_html=True)
 
 # ── TAB 3: FAQ ────────────────────────────────────────────────────────────────
 with tab3:
@@ -569,16 +574,16 @@ with tab3:
     st.markdown('<p class="section-sub">10 preguntas frecuentes generadas automaticamente por IA desde la Knowledge Base.</p>', unsafe_allow_html=True)
 
     if st.button("Generar FAQ", type="primary"):
-        with st.spinner("Analizando Knowledge Base con Gemini 2.5 Flash..."):
+        with st.spinner("Analizando Knowledge Base con Gemini Flash..."):
             st.session_state["faq"] = system.get_faq()
 
     if "faq" in st.session_state and st.session_state["faq"]:
-        st.markdown(st.session_state["faq"])
+        st.markdown(f'<div class="generated-content">{st.session_state["faq"]}</div>', unsafe_allow_html=True)
 
 # ── TAB 4: ARQUITECTURA ───────────────────────────────────────────────────────
 with tab4:
     st.markdown('<p class="section-title">Arquitectura del Sistema</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-sub">Diseno tecnico, tecnologias y metricas del sistema Q&A semantico.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-sub">Diseño tecnico, tecnologias y metricas del sistema Q&A semantico.</p>', unsafe_allow_html=True)
 
     col_a, col_b = st.columns([3, 2], gap="large")
 
@@ -589,20 +594,20 @@ with tab4:
 |---|---|
 | **LLM** | Google Gemini 2.5 Flash |
 | **Framework** | LangChain |
-| **Web Scraping** | Selenium + Chrome + BeautifulSoup4 |
+| **Web Scraping** | Selenium (Stealth) + Requests + BeautifulSoup4 |
 | **Interfaz** | Streamlit |
-| **Empresa** | Tecnoquimicas S.A. (TQ Confiable) |
+| **Empresas** | TQ Confiable & TQ Farma |
         """)
 
         st.markdown("##### Flujo del Sistema")
         st.code("""
-www.tqconfiable.com  (12 URLs verificadas)
+tqconfiable.com & tqfarma.com  (65 URLs verificadas)
         |
-   scraper.py    ->   raw_data.json
-   Selenium          JS renderizado
+   scraper.py (Stealth)    ->   raw_data.json
+   undetected_chromedriver + requests
         |
 knowledge_base.py -> knowledge_base.txt
-Limpieza+Chunking    chunks.json
+Limpieza Profunda    chunks.json
         |
   qa_system.py  (Gemini 2.5 Flash + LangChain)
    |        |        |
@@ -621,35 +626,40 @@ Resumen    FAQ    Q&A Contextual
 
     with col_b:
         st.markdown("##### Metricas de la Knowledge Base")
-        st.markdown("""
+        
+        # Calculamos el tamaño real del txt dinámicamente
+        kb_length = len(system.knowledge_base)
+        kb_formatted = f"{kb_length:,}".replace(",", ".")
+        
+        st.markdown(f"""
 <div class="metric-grid">
   <div class="metric-card">
-    <div class="metric-num">48.630</div>
-    <div class="metric-desc">Caracteres en la<br>Knowledge Base</div>
+    <div class="metric-num">{kb_formatted}</div>
+    <div class="metric-desc">Caracteres limpios<br>extraídos en total</div>
   </div>
   <div class="metric-card">
-    <div class="metric-num">72</div>
-    <div class="metric-desc">Chunks semanticos<br>generados</div>
+    <div class="metric-num">~300+</div>
+    <div class="metric-desc">Medicamentos<br>y referencias</div>
   </div>
   <div class="metric-card">
-    <div class="metric-num">12</div>
-    <div class="metric-desc">URLs scrapeadas<br>de tqconfiable.com</div>
+    <div class="metric-num">65</div>
+    <div class="metric-desc">URLs scrapeadas<br>con éxito</div>
   </div>
   <div class="metric-card">
-    <div class="metric-num">11/12</div>
-    <div class="metric-desc">Paginas con<br>contenido exitoso</div>
+    <div class="metric-num">2</div>
+    <div class="metric-desc">Portales corporativos<br>analizados</div>
   </div>
 </div>
         """, unsafe_allow_html=True)
 
         st.markdown("##### Datos reales extraidos")
         st.markdown("""
-- Historia 1934 - 2020 (18.579 chars)
-- 8.200+ colaboradores, 8 sedes productivas
-- Marcas: MK, Winny, Content, Sal de Frutas LUA, Noraver, Ibuflash, Duraflex, Yodora, CureBand, Hidraplus
-- Paises: Colombia, Ecuador, El Salvador, Guatemala, Honduras, Nicaragua, Panama, Costa Rica, Rep. Dominicana, +20 exportaciones
+- Vademécum médico completo de TQ Farma (A-Z)
+- Historia cronológica detallada (1934 - 2025)
+- Cifras operativas: 8.200+ colaboradores, 8 sedes
+- Inversiones: +300 millones de USD recientes
 - 400+ quimicos, 647 estudios cientificos (1998-2024)
-- 36.000 paneles solares, PTAR propias, 100% reciclaje
+- Datos ESG: 36.000 paneles solares, PTAR propias
         """)
 
 st.markdown('</div>', unsafe_allow_html=True)
