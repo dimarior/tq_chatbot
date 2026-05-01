@@ -3,8 +3,13 @@ import { QAOrchestrator } from './core/qa-orchestrator.js';
 
 const TEMPLATE = `
   <button class="bubble" type="button" aria-label="Abrir chat" part="bubble">
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8.5L4 21V5a1 1 0 0 1 1-1zm3 6h10v2H7v-2zm0-3h10v2H7V7z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 8V4H8"/>
+      <rect width="16" height="12" x="4" y="8" rx="2"/>
+      <path d="M2 14h2"/>
+      <path d="M20 14h2"/>
+      <path d="M15 13v2"/>
+      <path d="M9 13v2"/>
     </svg>
   </button>
   <div class="panel" role="dialog" aria-label="Asistente TQ" hidden>
