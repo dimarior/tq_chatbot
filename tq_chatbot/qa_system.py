@@ -57,8 +57,6 @@ def load_knowledge_base() -> str:
 
 
 # ── PROMPT 1: Resumen Ejecutivo ───────────────────────────────────────────────
-Prompt para el resumen ejecutivo:
-
 SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """Eres un Director de Estrategia Corporativa con 20 años sintetizando inteligencia empresarial para juntas directivas. Tu pensamiento sigue una lógica precisa: primero registras la evidencia disponible, luego jerarquizas por relevancia estratégica, y solo entonces redactas. Nunca extrapolas, nunca rellenas vacíos con suposiciones razonables. Si el contexto no lo dice, tú no lo dices.
 
