@@ -1,3 +1,5 @@
+import { AIClient, Status } from './core/ai.js';
+
 const TEMPLATE = `
   <button class="bubble" type="button" aria-label="Abrir chat" part="bubble">
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -13,6 +15,19 @@ const TEMPLATE = `
       <p>Tu pregunta nunca sale del navegador. La IA corre directamente en tu dispositivo.</p>
       <button type="button" class="disclaimer-ack">Entendido</button>
     </div>
+    <div class="status-banner" hidden>
+      <p class="status-msg"></p>
+      <div class="status-progress" hidden><div class="status-progress-bar"></div></div>
+      <button type="button" class="status-action" hidden></button>
+      <details class="status-help" hidden>
+        <summary>¿Cómo habilitarlo?</summary>
+        <ol>
+          <li>Usa Chrome 138 o superior.</li>
+          <li>Abre <code>chrome://flags/#prompt-api-for-gemini-nano</code> y ponlo en <em>Enabled</em>.</li>
+          <li>Reinicia Chrome y vuelve a abrir esta página.</li>
+        </ol>
+      </details>
+    </div>
     <div class="messages" role="log" aria-live="polite" aria-relevant="additions">
       <p class="empty-state">Hazme una pregunta sobre Tecnoquímicas.<br/>Leeré la página actual para responder.</p>
     </div>
@@ -25,6 +40,13 @@ const TEMPLATE = `
 
 const POSITIONS = new Set(['bottom-right', 'bottom-left', 'top-right', 'top-left']);
 const DEFAULT_PLACEHOLDER = 'Pregúntame sobre Tecnoquímicas...';
+
+const SYSTEM_PROMPT = [
+  'Eres el asistente virtual de Tecnoquímicas S.A., una compañía colombiana del sector farmacéutico y de consumo masivo fundada en 1934.',
+  'Responde siempre en español, de forma clara y breve (máximo 4 oraciones cuando sea posible).',
+  'Si no tienes información suficiente para responder con certeza, dilo explícitamente; nunca inventes datos.',
+  'No respondas en otro idioma aunque te lo pidan.',
+].join(' ');
 
 export class ChatWidget extends HTMLElement {
   static cssText = '';
@@ -39,6 +61,8 @@ export class ChatWidget extends HTMLElement {
     this._disclaimerSeen = false;
     this._messages = [];
     this._initialized = false;
+    this._ai = null;
+    this._aiInitStarted = false;
   }
 
   connectedCallback() {
@@ -62,6 +86,12 @@ export class ChatWidget extends HTMLElement {
     this._panelClose = root.querySelector('.panel-close');
     this._disclaimer = root.querySelector('.disclaimer');
     this._disclaimerAck = root.querySelector('.disclaimer-ack');
+    this._statusBanner = root.querySelector('.status-banner');
+    this._statusMsg = root.querySelector('.status-msg');
+    this._statusProgress = root.querySelector('.status-progress');
+    this._statusProgressBar = root.querySelector('.status-progress-bar');
+    this._statusAction = root.querySelector('.status-action');
+    this._statusHelp = root.querySelector('.status-help');
     this._messagesEl = root.querySelector('.messages');
     this._emptyState = root.querySelector('.empty-state');
     this._form = root.querySelector('.composer');
@@ -76,10 +106,24 @@ export class ChatWidget extends HTMLElement {
     this._panelClose.addEventListener('click', () => this._toggle(false));
     this._disclaimerAck.addEventListener('click', () => this._dismissDisclaimer());
     this._form.addEventListener('submit', (e) => this._onSubmit(e));
+    this._statusAction.addEventListener('click', () => this._onStatusAction());
+
+    this._ai = new AIClient({
+      system: SYSTEM_PROMPT,
+      languages: ['es'],
+      onStatusChange: (s) => this._renderStatus(s),
+      onDownloadProgress: (pct) => this._renderDownloadProgress(pct),
+    });
+
+    // Render explícito del estado UNKNOWN antes del chequeo asíncrono, para
+    // dejar el composer deshabilitado hasta confirmar disponibilidad.
+    this._renderStatus(Status.UNKNOWN);
+    this._ai.checkAvailability();
   }
 
   disconnectedCallback() {
-    // Capa 3: aquí se llamará session.destroy() del wrapper de ai.js
+    this._ai?.destroy();
+    this._ai = null;
   }
 
   attributeChangedCallback(name, _old, value) {
@@ -119,10 +163,84 @@ export class ChatWidget extends HTMLElement {
     this._input.focus();
   }
 
+  // ---- Estado del modelo ----------------------------------------------------
+
+  _renderStatus(status) {
+    const banner = this._statusBanner;
+    banner.dataset.state = status;
+
+    this._statusProgress.hidden = status !== Status.DOWNLOADING;
+    this._statusHelp.hidden = status !== Status.UNAVAILABLE;
+    this._statusAction.hidden = true;
+    this._statusAction.disabled = false;
+
+    let visible = true;
+    let inputEnabled = false;
+
+    switch (status) {
+      case Status.AVAILABLE:
+        visible = false;
+        inputEnabled = true;
+        break;
+      case Status.UNAVAILABLE:
+        this._statusMsg.textContent =
+          'Tu navegador no soporta IA on-device. Para usar este asistente necesitas Chrome con la Prompt API habilitada.';
+        break;
+      case Status.DOWNLOADABLE:
+        this._statusMsg.textContent =
+          'El modelo de IA on-device está disponible para descargar (~2 GB). La descarga ocurre una sola vez.';
+        this._statusAction.hidden = false;
+        this._statusAction.textContent = 'Descargar modelo';
+        break;
+      case Status.DOWNLOADING:
+        this._statusMsg.textContent = 'Descargando el modelo de IA on-device...';
+        break;
+      case Status.ERROR:
+        this._statusMsg.textContent =
+          'Hubo un error inicializando el modelo. Revisa la consola e intenta de nuevo.';
+        this._statusAction.hidden = false;
+        this._statusAction.textContent = 'Reintentar';
+        break;
+      default:
+        // UNKNOWN: aún no chequeamos
+        this._statusMsg.textContent = 'Verificando disponibilidad del modelo...';
+    }
+
+    banner.hidden = !visible;
+    this._setComposerEnabled(inputEnabled);
+  }
+
+  _renderDownloadProgress(pct) {
+    this._statusProgressBar.style.width = `${pct}%`;
+    this._statusMsg.textContent = `Descargando el modelo de IA on-device... ${pct}%`;
+  }
+
+  async _onStatusAction() {
+    if (!this._ai) return;
+    const status = this._ai.status;
+    if (status === Status.DOWNLOADABLE || status === Status.ERROR) {
+      this._statusAction.disabled = true;
+      try {
+        await this._ai.init();
+      } catch (err) {
+        console.error('[company-chat] init falló', err);
+      }
+    }
+  }
+
+  _setComposerEnabled(enabled) {
+    this._input.disabled = !enabled;
+    this._sendBtn.disabled = !enabled;
+  }
+
+  // ---- Conversación ---------------------------------------------------------
+
   async _onSubmit(e) {
     e.preventDefault();
     const text = this._input.value.trim();
     if (!text) return;
+    if (!this._ai || this._ai.status !== Status.AVAILABLE) return;
+
     this._input.value = '';
     this._setBusy(true);
     this._addMessage({ role: 'user', text });
@@ -143,18 +261,15 @@ export class ChatWidget extends HTMLElement {
     }
   }
 
-  // Capa 2: respuesta mock. Capa 3+ reemplaza esto por el orchestrator real.
+  // Capa 3: prompt directo al modelo. Capa 4+ envolverá con contexto del DOM.
   async _answer(question) {
-    await new Promise((r) => setTimeout(r, 450));
-    return {
-      answer: `(mock) Recibí tu pregunta: "${question}". La integración con la IA on-device llega en la próxima capa.`,
-      source: null,
-    };
+    const text = await this._ai.ask(question);
+    return { answer: (text ?? '').trim(), source: null };
   }
 
   _setBusy(on) {
-    this._input.disabled = on;
-    this._sendBtn.disabled = on;
+    this._input.disabled = on || this._ai?.status !== Status.AVAILABLE;
+    this._sendBtn.disabled = on || this._ai?.status !== Status.AVAILABLE;
   }
 
   _addMessage(msg) {

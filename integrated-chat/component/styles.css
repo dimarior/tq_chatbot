@@ -116,6 +116,65 @@
 }
 .disclaimer-ack:hover { background: var(--cc-accent-hover); }
 
+.status-banner {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--cc-border);
+  font-size: 12.5px;
+  color: var(--cc-text);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff8e1;
+}
+.status-banner[data-state="unavailable"] { background: #fde8e8; }
+.status-banner[data-state="downloading"] { background: #e3f2fd; }
+.status-banner[data-state="downloadable"] { background: #fff3cd; }
+.status-banner[data-state="error"]       { background: #fde8e8; }
+.status-banner[hidden] { display: none; }
+
+.status-msg { margin: 0; line-height: 1.4; }
+
+.status-progress {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.status-progress[hidden] { display: none; }
+.status-progress-bar {
+  height: 100%;
+  background: var(--cc-accent);
+  width: 0%;
+  transition: width 200ms ease;
+}
+
+.status-action {
+  align-self: flex-end;
+  background: var(--cc-accent);
+  color: #ffffff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.status-action:hover:not(:disabled) { background: var(--cc-accent-hover); }
+.status-action:disabled { opacity: 0.6; cursor: not-allowed; }
+.status-action[hidden] { display: none; }
+
+.status-help { font-size: 12px; color: var(--cc-text-soft); }
+.status-help[hidden] { display: none; }
+.status-help summary { cursor: pointer; color: var(--cc-accent); font-weight: 500; }
+.status-help ol { margin: 6px 0 0 0; padding-left: 18px; line-height: 1.5; }
+.status-help code {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;
