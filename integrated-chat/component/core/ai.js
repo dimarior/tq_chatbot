@@ -152,17 +152,44 @@ export class AIClient {
     return this._createSession(a);
   }
 
-  // Ejecuta un prompt. Retorna string si streaming===false (default),
-  // o un AsyncIterable<string> si streaming===true.
+  // Ejecuta un prompt en una sesión clonada (stateless). La sesión base solo
+  // sirve para cargar el system prompt una vez; cada ask() obtiene un clone
+  // fresco para que cada Q&A sea independiente — sin contaminación entre
+  // llamadas (crítico para el orchestrator, que hace múltiples prompts por
+  // pregunta del usuario al iterar el sitemap).
+  // Retorna string si streaming===false (default), o un AsyncIterable si true.
   async ask(prompt, { responseConstraint, signal, streaming = false } = {}) {
     const session = await this.getSession();
     const opts = {};
     if (responseConstraint) opts.responseConstraint = responseConstraint;
     if (signal) opts.signal = signal;
-    if (streaming) {
-      return session.promptStreaming(prompt, opts);
+
+    let ephemeral;
+    try {
+      ephemeral = await session.clone({ signal });
+    } catch (err) {
+      // Si clone() no está disponible en este build, caemos al modo no
+      // stateless — peor experiencia pero no rompe la app.
+      console.warn('[ai.js] session.clone() falló, usando sesión compartida', err);
+      if (streaming) return session.promptStreaming(prompt, opts);
+      return session.prompt(prompt, opts);
     }
-    return session.prompt(prompt, opts);
+
+    if (streaming) {
+      // No podemos auto-destruir: el caller itera el AsyncIterable después de
+      // que retornemos. Devolvemos el iterable y dejamos que el GC se encargue.
+      return ephemeral.promptStreaming(prompt, opts);
+    }
+
+    try {
+      return await ephemeral.prompt(prompt, opts);
+    } finally {
+      try {
+        ephemeral.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   // Información del contexto de la sesión actual (puede no existir en builds viejos).

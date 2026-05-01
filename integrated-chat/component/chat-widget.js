@@ -1,4 +1,5 @@
 import { AIClient, Status } from './core/ai.js';
+import { QAOrchestrator } from './core/qa-orchestrator.js';
 
 const TEMPLATE = `
   <button class="bubble" type="button" aria-label="Abrir chat" part="bubble">
@@ -62,6 +63,7 @@ export class ChatWidget extends HTMLElement {
     this._messages = [];
     this._initialized = false;
     this._ai = null;
+    this._orchestrator = null;
     this._aiInitStarted = false;
   }
 
@@ -114,6 +116,10 @@ export class ChatWidget extends HTMLElement {
       onStatusChange: (s) => this._renderStatus(s),
       onDownloadProgress: (pct) => this._renderDownloadProgress(pct),
     });
+    this._orchestrator = new QAOrchestrator({
+      ai: this._ai,
+      sitemapUrl: this.getAttribute('sitemap-url') || null,
+    });
 
     // Render explícito del estado UNKNOWN antes del chequeo asíncrono, para
     // dejar el composer deshabilitado hasta confirmar disponibilidad.
@@ -124,6 +130,7 @@ export class ChatWidget extends HTMLElement {
   disconnectedCallback() {
     this._ai?.destroy();
     this._ai = null;
+    this._orchestrator = null;
   }
 
   attributeChangedCallback(name, _old, value) {
@@ -131,6 +138,7 @@ export class ChatWidget extends HTMLElement {
     if (name === 'position') this._applyPosition(value);
     else if (name === 'accent-color') this._applyAccent(value);
     else if (name === 'placeholder') this._applyPlaceholder(value);
+    else if (name === 'sitemap-url') this._orchestrator?.setSitemapUrl(value || null);
   }
 
   _applyPosition(value) {
@@ -261,10 +269,25 @@ export class ChatWidget extends HTMLElement {
     }
   }
 
-  // Capa 3: prompt directo al modelo. Capa 4+ envolverá con contexto del DOM.
+  // Capa 6: orchestrator + fallback al sitemap. La fuente puede ser:
+  //   - 'current' (página actual) → no se renderiza link
+  //   - una URL → link clicable a la fuente
+  //   - null → no se encontró respuesta
+  // Cuando found=false ignoramos el texto del modelo (que tiende a meter datos
+  // tangenciales) y mostramos un mensaje limpio fijo. El texto crudo queda en el
+  // log de debug.
   async _answer(question) {
-    const text = await this._ai.ask(question);
-    return { answer: (text ?? '').trim(), source: null };
+    const result = await this._orchestrator.ask(question);
+    let answer;
+    if (result.found && result.answer) {
+      answer = result.answer;
+    } else if (result.found) {
+      answer = 'No tengo más detalles sobre eso.';
+    } else {
+      answer = 'No encontré información sobre eso en este sitio.';
+    }
+    const source = result.source && result.source !== 'current' ? result.source : null;
+    return { answer, source };
   }
 
   _setBusy(on) {
