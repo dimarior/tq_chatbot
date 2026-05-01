@@ -56,6 +56,10 @@ Cargar la extensión sin empaquetar (para la demo final):
 2. Click en **Load unpacked** y seleccionar la carpeta `integrated-chat/extension/`.
 3. Visitar `https://www.tqconfiable.com/` o `https://www.tqfarma.com/`.
 
+`extension/component` es un **symlink** a `../component` para que la extensión y el demo standalone compartan exactamente el mismo código. Chrome sigue symlinks en modo unpacked en macOS/Linux. Si se empaqueta para Chrome Web Store, reemplazar el symlink por una copia.
+
+La inyección del componente se hace via `<script type="module" src="chrome-extension://...">` desde el ISOLATED world; el módulo se ejecuta en MAIN world (necesario para acceder a `LanguageModel`). Esto está sujeto al CSP del sitio anfitrión: si una página objetivo bloquea `chrome-extension:` en `script-src`, ver `KNOWN_ISSUES.md` para la mitigación.
+
 Ver disponibilidad del modelo:
 
 ```js

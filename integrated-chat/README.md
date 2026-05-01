@@ -44,6 +44,53 @@ Abrir <http://localhost:8000/demo/>. Aparece una burbuja azul abajo a la derecha
 2. **Load unpacked** → seleccionar `integrated-chat/extension/`.
 3. Navegar a `https://www.tqconfiable.com/` o `https://www.tqfarma.com/`.
 
+`extension/component` es un symlink a `../component` para mantener un solo árbol de fuentes. Si tu sistema no soporta symlinks (Windows con configuración por defecto), reemplázalo por una copia de la carpeta `component/`.
+
+Si la burbuja no aparece y la consola muestra un error de CSP bloqueando `chrome-extension:`, ver `KNOWN_ISSUES.md` para la mitigación con `world: "MAIN"` content scripts.
+
+## Batería de pruebas para la demo
+
+Preguntas para validar la extensión sobre `https://www.tqconfiable.com/`. Empieza por las **verdes**: si esas funcionan, el flujo base está sólido.
+
+### 🟢 Deberían responder (página actual o sitemap)
+
+| # | Pregunta | Página esperada |
+|---|---|---|
+| 1 | ¿Qué hace Tecnoquímicas? | `/quienes-somos/quien-es-tq/` |
+| 2 | ¿Cuál es la misión de TQ? | `/quienes-somos/mision/` |
+| 3 | ¿Cuál es la visión de Tecnoquímicas? | `/quienes-somos/vision/` |
+| 4 | ¿Qué dice el credo de la empresa? | `/quienes-somos/credo/` |
+| 5 | ¿Cuándo se fundó Tecnoquímicas? | `/quienes-somos/historia/` |
+| 6 | ¿Qué hace TQ por el medio ambiente? | `/mundo/planeta/` |
+| 7 | ¿Cuáles son los beneficios de trabajar en TQ? | `/trabaja/beneficios/` |
+| 8 | ¿Cómo contacto al servicio al cliente? | `/contacto/servicio-al-cliente/` |
+| 9 | ¿Qué es la línea ética? | `/contacto/linea-etica/` |
+| 10 | ¿Qué hay sobre gobierno corporativo? | `/gobierno-corporativo/` |
+
+### 🟠 Sobre noticias específicas (validan el ranking semántico)
+
+| # | Pregunta | Página esperada |
+|---|---|---|
+| 11 | ¿TQ lanzó alcohol gel MK? | `/noticias/tq-lanza-su-alcohol-gel-mk-al-70/` |
+| 12 | ¿TQ es una multilatina? | `/noticias/tq-una-de-las-100-multilatinas/` |
+| 13 | ¿Winny está entre las marcas más valiosas? | `/noticias/winny-una-de-las-20-marcas-colombianas-mas-valiosas/` |
+
+### 🔴 Deberían fallar honestamente (`not-found`)
+
+| # | Pregunta | Por qué |
+|---|---|---|
+| 14 | ¿Cuál es el sueldo del CEO? | Información no pública |
+| 15 | ¿Cuántas acciones tiene la empresa? | Información no pública |
+| 16 | ¿Cuál es el correo personal de Francisco Barberi? | Test anti-alucinación |
+
+### ⚠️ Test del límite documentado (entity confusion)
+
+| # | Pregunta | Comportamiento esperado |
+|---|---|---|
+| 17 | ¿Cuándo se fundó TQ Farma? | TQ Farma vive en `tqfarma.com`; en `tqconfiable.com` no hay info específica. Lo correcto sería `not-found`. Por el límite del modelo on-device documentado en [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md), puede confundir y devolver 1934 (la fecha de Tecnoquímicas, su matriz). Sirve para evidenciar el límite. |
+
+Para reportar fallos: la pregunta exacta + la respuesta + screenshot del log expandido `[qa-orchestrator]` (chosen / primary / fallback).
+
 ## Uso en producción (visión)
 
 Copiar la carpeta `component/` al sitio de la empresa y agregar el tag:
