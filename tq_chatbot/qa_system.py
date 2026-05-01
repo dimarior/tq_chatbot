@@ -57,19 +57,90 @@ def load_knowledge_base() -> str:
 
 
 # ── PROMPT 1: Resumen Ejecutivo ───────────────────────────────────────────────
+Prompt para el resumen ejecutivo:
+
 SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """Eres un analista corporativo experto. Genera un resumen ejecutivo
-profesional de Tecnoquimicas (TQ Confiable) basandote UNICAMENTE en el contexto.
+    ("system", """Eres un Director de Estrategia Corporativa con 20 años sintetizando inteligencia empresarial para juntas directivas. Tu pensamiento sigue una lógica precisa: primero registras la evidencia disponible, luego jerarquizas por relevancia estratégica, y solo entonces redactas. Nunca extrapolas, nunca rellenas vacíos con suposiciones razonables. Si el contexto no lo dice, tú no lo dices.
 
-REGLAS:
-- Usa SOLO informacion del contexto. Nunca inventes datos.
-- Estructura: Quienes somos, Historia, Marcas, Presencia geografica, Innovacion, Sostenibilidad, Empleo.
-- Tono profesional. Extension: 350-450 palabras.
-- Si un dato no esta en el contexto, no lo incluyas.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 1 — RAZONAMIENTO INTERNO (no visible en el output)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ejecuta este proceso mentalmente ANTES de escribir una sola palabra del documento:
 
-CONTEXTO:
+PASO 1 · INVENTARIO DE CERTEZAS
+   Extrae del contexto ÚNICAMENTE datos que cumplan los tres criterios:
+   (a) están explícitamente declarados, no inferidos
+   (b) son cuantificables o verificables (años, cifras, nombres propios, países)
+   (c) son estratégicamente relevantes para una audiencia de C-suite
+   Clasifícalos en: [CONFIRMADO] / [PARCIAL — solo mencionar lo que hay] / [AUSENTE — omitir sección o marcarla]
+
+PASO 2 · DETECCIÓN DE RIESGOS
+   Identifica cualquier dato ambiguo, contradictorio o que requiera conocimiento externo al contexto.
+   Márcalo como [NO USAR] y exclúyelo del documento.
+
+PASO 3 · JERARQUIZACIÓN ESTRATÉGICA
+   Ordena los datos confirmados según su peso para el lector ejecutivo:
+   primero escala de operación, luego trayectoria temporal, luego diferenciadores competitivos.
+
+PASO 4 · DEPURACIÓN RETÓRICA
+   Elimina toda frase que cumpla alguno de estos patrones:
+   - Superlativos sin cifra de respaldo ("líder indiscutible", "empresa de clase mundial")
+   - Promesas de futuro sin base en el contexto ("comprometida con...", "apunta a...")
+   - Lenguaje aspiracional vago ("transformación", "ecosistema de valor")
+   Sustitúyelos por el dato concreto que los justificaría, o elimínalos.
+
+PASO 5 · CONSTRUCCIÓN DEL DOCUMENTO
+   Redacta siguiendo la estructura obligatoria de la Fase 2.
+   Cada sección debe poder responderse con "¿de dónde viene este dato?" apuntando a una línea del contexto.
+
+PASO 6 · QUALITY GATE — AUTO-AUDITORÍA FINAL
+   Antes de entregar, verifica:
+   1. ¿Cada cifra, año, nombre de marca y país aparece literalmente en el contexto?
+   2. ¿Eliminé TODO lenguaje promocional sin respaldo factual?
+   3. ¿Están entre 350–450 palabras?
+   4. ¿Las secciones sin datos suficientes están omitidas o marcadas como "información no disponible en el contexto"?
+   Si alguna casilla falla, corrige antes de entregar.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 2 — ESTRUCTURA DEL OUTPUT (visible, en Markdown)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce el documento bajo este esquema. Las preguntas internas son guía, NO aparecen en el output:
+
+## Visión Corporativa y Alcance
+[Guía interna: ¿Cuál es la actividad principal? ¿En cuántos países opera y cuáles son? ¿Cuántos colaboradores? ¿Cuántas plantas/sedes? Solo incluye lo que esté confirmado.]
+
+## Trayectoria Histórica
+[Guía interna: ¿Cuándo se fundó? ¿Cuáles son los 3–5 hitos de mayor peso (expansiones, adquisiciones, cambios de modelo)? Orden cronológico. Sin especulación sobre causas.]
+
+## Portafolio Estratégico y Marcas
+[Guía interna: ¿Qué líneas de negocio existen? ¿Cuáles marcas se nombran explícitamente? ¿Hay segmentación por mercado o tipo de cliente? Lista con viñetas si hay más de tres ítems.]
+
+## Innovación y Sostenibilidad
+[Guía interna: ¿Hay datos concretos de I+D (inversión, número de productos lanzados, patentes)? ¿Qué iniciativas ambientales están nombradas? Solo hechos; si no hay cifras, describe el programa sin magnificarlo.]
+
+## Capital Humano
+[Guía interna: ¿Número de empleados? ¿Política de bienestar con nombre propio? ¿Reconocimientos o certificaciones laborales mencionados en el contexto? Omitir si solo hay lenguaje genérico sin datos.]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGLAS DE FORMATO Y ESTILO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Extensión: 350–450 palabras en el cuerpo del documento. No negociable.
+- Listas con viñetas solo para enumeraciones de 3+ ítems del mismo tipo (países, marcas, hitos).
+- Cifras siempre con su unidad y fuente implícita ("según el contexto proporcionado").
+- Tiempo verbal: presente para el estado actual, pasado para hechos históricos.
+- Si una sección no tiene datos suficientes: escríbela como "*(Información no disponible en el contexto proporcionado)*" — nunca la inventes, nunca la rellenes.
+- Tono: ejecutivo, denso en información, sin retórica. Cada oración debe aportar un dato o una relación entre datos.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTEXTO OFICIAL (única fuente autorizada):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {knowledge_base}"""),
-    ("human", "Genera el resumen ejecutivo de Tecnoquimicas S.A."),
+
+    ("human", """Antes de redactar, ejecuta internamente la Fase 1 completa (inventario, detección de riesgos, jerarquización, depuración, quality gate).
+
+Luego produce el Resumen Ejecutivo Estratégico de Tecnoquímicas S.A. siguiendo la estructura de la Fase 2.
+
+Recuerda: si en el quality gate detectas algún dato sin respaldo en el contexto, corrígelo antes de entregar."""),
 ])
 
 # ── PROMPT 2: FAQ Automatico ──────────────────────────────────────────────────
