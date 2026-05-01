@@ -39,6 +39,9 @@
   const widget = document.createElement('company-chat');
   widget.setAttribute('sitemap-url', '/sitemap.xml');
   widget.setAttribute('position', 'bottom-right');
+  // tqconfiable.com / tqfarma.com tienen su propio FAB redondo en bottom-right;
+  // empujamos la burbuja hacia arriba para no encimarse.
+  widget.style.setProperty('--cc-offset-bottom', '100px');
 
   const insert = () => (document.body || document.documentElement).appendChild(widget);
   if (document.body) insert();
