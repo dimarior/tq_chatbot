@@ -11,8 +11,9 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-CHUNK_SIZE    = 800
-CHUNK_OVERLAP = 150
+# Aumenta el CHUNK_SIZE para que la IA lea bloques más grandes de una vez
+CHUNK_SIZE = 1500  
+CHUNK_OVERLAP = 300 
 
 NAV_SKIP = {
     "Síguenos", "LinkedIn", "Instagram", "Facebook", "Youtube", "Twitter",
@@ -24,29 +25,36 @@ NAV_SKIP = {
     "Ibuflash", "Yodora", "INICIAR SESIÓN", "REGISTRARSE",
     "Vademécum", "Biblioteca científica", "Medicamentos A-Z",
     "Inicio Biblioteca", "Acceso a Journals", "VER TODAS", "ACCEDER",
+    "Volver", "Aceptar", "Enviar", "Comparte en:"
+}
+
+# La "Lista Negra" para eliminar la basura de los formularios y pop-ups (Frases largas)
+BASURA_PHRASES = [
+    "Usted está siendo redirigido", "sitio web externo y ajeno",
+    "Si desea continuar, haga clic", "Bienvenido al Chat",
+    "Tipo de identificación", "Cédula de", "Carnet diplomático",
+    "ID extranjero", "Fideicomiso", "Registro civil", "Tarjeta de identidad",
+    "El usuario tiene que ser de", "El correo solo puede", 
+    "El teléfono solo puede", "Acepto los Términos", "var metaTag",
+    "return metaTag", "No description found"
+]
+
+# Lista para palabras sueltas (solo borra si la línea es EXACTAMENTE esto)
+EXACT_BASURA = {
+    "Nacionalidad", "Nombre", "Apellidos", "Correo Electrónico", 
+    "Teléfono", "Enviar", "Colombia", "Venezuela", "Ecuador", "Pasaporte"
 }
 
 # Orden de prioridad de secciones en la Knowledge Base
 ORDER_PRIORITY = [
-    # IDENTIDAD CORPORATIVA (mayor prioridad)
     "quien_es_tq", "proposito", "mision", "vision", "credo", "historia",
-    # MUNDO
-    "planeta", "gente",
-    # INNOVACION
-    "innovacion", "investigacion",
-    # TRABAJA
+    "planeta", "gente", "innovacion", "investigacion",
     "beneficios", "ofertas", "testimonios",
-    # CONTACTO
-    "encuentranos", "servicio", "faq", "linea_etica",
-    # GOBIERNO
-    "gobierno",
-    # TQFARMA (portal medico oficial)
+    "encuentranos", "servicio", "faq", "linea_etica", "gobierno",
     "tqfarma_quienes", "tqfarma_inicio", "tqfarma_vademecum",
     "tqfarma_vademecum_mk", "tqfarma_vademecum_otc",
     "tqfarma_medicamentos", "tqfarma_noticias", "tqfarma_guias",
-    "tqfarma_contacto",
-    # NOTICIAS (al final por ser contenido mas especifico)
-    "noticias",
+    "tqfarma_contacto", "noticias",
     "noticia_alcohol_gel", "noticia_multilatinas", "noticia_lactancia",
     "noticia_500empresas", "noticia_historia_medicina", "noticia_winny_marca",
     "noticia_copidrogas", "noticia_educacion", "noticia_canguro",
@@ -64,58 +72,41 @@ ORDER_PRIORITY = [
 
 
 def clean_text(text: str) -> str:
-    """Limpieza profunda del texto crudo."""
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = re.sub(r' {2,}', ' ', text)
     lines = text.splitlines()
     filtered = []
-    seen = set()
     for line in lines:
         line = line.strip()
-        if len(line) < 15:
+        
+        # Filtro 1: Exacto (para palabras sueltas de formularios/menús)
+        if line in EXACT_BASURA or line in NAV_SKIP:
             continue
-        if line in NAV_SKIP:
+            
+        # Filtro 2: Si es muy corta y no tiene números (fechas/años), descartar
+        if not (len(line) >= 3 or (len(line) > 0 and any(c.isdigit() for c in line))):
             continue
-        if re.match(r'^© \d{4}', line):
+            
+        # Filtro 3: Parcial (para frases largas del bot/popups)
+        if any(basura in line for basura in BASURA_PHRASES):
             continue
-        if re.match(r'^https?://', line):
-            continue
-        if line in seen:
-            continue
-        seen.add(line)
+            
         filtered.append(line)
     return '\n'.join(filtered)
 
-
 def build_chunks(text: str) -> list[str]:
-    """Divide el texto en chunks semanticamente coherentes."""
-    paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 30]
+    paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 10]
     chunks = []
     current = ""
 
     for para in paragraphs:
-        if len(current) + len(para) + 2 <= CHUNK_SIZE:
+        if len(current) + len(para) + 2 <= 1200:
             current += ('\n\n' if current else '') + para
         else:
             if current:
                 chunks.append(current)
-                words = current.split()
-                overlap = ' '.join(words[-(CHUNK_OVERLAP // 6):]) if len(words) > CHUNK_OVERLAP // 6 else ""
-                current = (overlap + '\n\n' + para).strip() if overlap else para
-            else:
-                sentences = re.split(r'(?<=[.!?])\s+', para)
-                for sent in sentences:
-                    if len(current) + len(sent) + 1 <= CHUNK_SIZE:
-                        current += (' ' if current else '') + sent
-                    else:
-                        if current:
-                            chunks.append(current)
-                        current = sent
-
+                current = para
     if current:
         chunks.append(current)
-
-    return [c for c in chunks if len(c.strip()) > 40]
+    return chunks
 
 
 def build_knowledge_base(raw_data: dict) -> tuple[str, list[dict]]:
@@ -125,8 +116,6 @@ def build_knowledge_base(raw_data: dict) -> tuple[str, list[dict]]:
     print(f"  Inicio: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 65)
 
-    # Construir orden final: primero las prioritarias, luego cualquier
-    # seccion que este en raw_data pero no en ORDER_PRIORITY
     remaining = [k for k in raw_data if k not in ORDER_PRIORITY]
     final_order = ORDER_PRIORITY + remaining
 
@@ -172,27 +161,18 @@ def build_knowledge_base(raw_data: dict) -> tuple[str, list[dict]]:
         json.dumps(all_chunks, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    # Estadisticas por fuente
     tqconfiable_chunks = sum(1 for c in all_chunks if c["source"] == "tqconfiable.com")
     tqfarma_chunks     = sum(1 for c in all_chunks if c["source"] == "tqfarma.com")
     tqconfiable_chars  = sum(c["length"] for c in all_chunks if c["source"] == "tqconfiable.com")
     tqfarma_chars      = sum(c["length"] for c in all_chunks if c["source"] == "tqfarma.com")
 
     print(f"\n{'='*65}")
-    print(f"  KNOWLEDGE BASE CONSTRUIDA")
+    print(f"  KNOWLEDGE BASE CONSTRUIDA LIMPIA Y PURGADA")
     print(f"{'='*65}")
     print(f"  Secciones procesadas : {procesadas}")
-    print(f"  Secciones omitidas   : {omitidas} (contenido insuficiente)")
+    print(f"  Secciones omitidas   : {omitidas}")
     print(f"  Total chunks         : {len(all_chunks)}")
     print(f"  Total caracteres     : {len(full_text):,}")
-    print()
-    print(f"  Por fuente:")
-    print(f"    tqconfiable.com    {tqconfiable_chunks:3} chunks | {tqconfiable_chars:>10,} chars")
-    print(f"    tqfarma.com        {tqfarma_chunks:3} chunks | {tqfarma_chars:>10,} chars")
-    print()
-    print(f"  Archivos generados:")
-    print(f"    knowledge_base.txt ({len(full_text):,} chars)")
-    print(f"    chunks.json        ({len(all_chunks)} chunks con metadatos)")
     print(f"{'='*65}\n")
 
     return full_text, all_chunks
@@ -202,7 +182,6 @@ if __name__ == "__main__":
     kb_path = Path("raw_data.json")
     if not kb_path.exists():
         print("❌ No se encontró raw_data.json")
-        print("   Ejecuta primero: python scraper.py")
     else:
         with open(kb_path, encoding="utf-8") as f:
             raw = json.load(f)
