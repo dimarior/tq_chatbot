@@ -122,6 +122,22 @@ python -m streamlit run app.py
 
 La aplicación abrirá en `http://localhost:8501`.
 
+Para acceder a la version desplegada en la nube:
+`https://tq-chatbot-taaml.streamlit.app`
+
+1. Sube el repositorio a GitHub
+2. Ve a https://share.streamlit.io e inicia sesion con tu cuenta de GitHub
+3. Click en New app, selecciona el repositorio y pon como Main file path: tq_chatbot/app.py
+4. En Advanced settings busca la seccion Secrets y agrega tu API key asi:
+
+   GOOGLE_API_KEY = "AIzaSy_TU_CLAVE_AQUI"
+
+5. Click en Deploy. La app estara disponible en tu URL de Streamlit Cloud en 2-3 minutos.
+
+Nota: el archivo .env nunca se sube al repositorio. En local la app
+lee la API key del .env, y en Streamlit Cloud la lee de los Secrets
+configurados en el paso anterior.
+
 ### Qué genera cada etapa
 
 | Etapa | Entrada | Salida |
