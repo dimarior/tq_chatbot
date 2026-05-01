@@ -44,16 +44,13 @@ def get_llm() -> ChatGoogleGenerativeAI:
     )
 
 
+# En qa_system.py (aprox línea 39)
 def load_knowledge_base() -> str:
     kb_path = Path(__file__).parent / "knowledge_base.txt"
     if not kb_path.exists():
-        raise FileNotFoundError(
-            "\n No se encontró knowledge_base.txt\n"
-            "   Ejecuta en orden:\n"
-            "       1. python scraper.py\n"
-            "       2. python knowledge_base.py\n"
-        )
-    return kb_path.read_text(encoding="utf-8")[:15000]
+        raise FileNotFoundError("...")
+    # Quita el [:15000] del final:
+    return kb_path.read_text(encoding="utf-8")
 
 
 # ── PROMPT 1: Resumen Ejecutivo ───────────────────────────────────────────────
@@ -224,7 +221,7 @@ CONTEXTO OFICIAL (única fuente autorizada):
 
     ("human", """Ejecuta la Fase 1 completa internamente — mapeo, pool de candidatos, selección por criterios y auditoría.
 
-Luego entrega el panel oficial de exactamente 10 Preguntas Frecuentes de Tecnoquímicas S.A. agrupadas por audiencia, siguiendo el formato de la Fase 2.
+Luego entrega el panel oficial de exactamente 20 Preguntas Frecuentes de Tecnoquímicas S.A. agrupadas por audiencia, siguiendo el formato de la Fase 2.
 
 Si en el quality gate detectas que alguna respuesta no tiene respaldo en el contexto, sustitúyela por otra del pool antes de entregar."""),
 ])
