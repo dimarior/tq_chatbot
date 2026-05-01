@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "TQ Asistente — Demo on-device",
+  "description": "Inyecta el asistente Q&A on-device <company-chat> sobre los sitios de Tecnoquímicas. Solo para uso de demo y presentación.",
+  "version": "0.1.0",
+  "host_permissions": [
+    "https://*.tqconfiable.com/*",
+    "https://*.tqfarma.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.tqconfiable.com/*",
+        "https://*.tqfarma.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "component/index.js",
+        "component/chat-widget.js",
+        "component/styles.css",
+        "component/core/ai.js",
+        "component/core/dom-reader.js",
+        "component/core/qa-orchestrator.js",
+        "component/core/sitemap.js"
+      ],
+      "matches": [
+        "https://*.tqconfiable.com/*",
+        "https://*.tqfarma.com/*"
+      ]
+    }
+  ]
+}
