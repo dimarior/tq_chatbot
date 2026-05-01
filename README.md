@@ -1,4 +1,4 @@
-# TQ-Confiable - Sistema Q&A Semantico para Tecnoquimicas S.A.
+# TQ-Confiable - Sistema Q&A Semántico para Tecnoquímicas S.A.
 
 Sistema de Preguntas y Respuestas (Q&A) sobre **Tecnoquímicas S.A. (TQ)** construido sobre Google Gemini 2.5 Flash y LangChain, con interfaz Streamlit. Trabajo académico para el **Taller 1 - Técnicas Avanzadas de IA Aplicadas en Modelos de Lenguaje**.
 
