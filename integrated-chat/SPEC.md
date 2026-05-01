@@ -113,7 +113,7 @@ Estado: historial de la conversación en memoria (no persiste entre recargas).
 - [x] **Capa 5 — `core/qa-orchestrator.js` (parcial):** flujo pregunta → DOM → respuesta. Aún sin sitemap.
 - [x] **Capa 6 — `core/sitemap.js` + integración del fallback:** ranking Jaccard, cita de fuente.
 - [x] **Capa 7 — Extensión MV3:** `manifest.json`, `content.js`, `background.js`. Carga unpacked, inyecta en ambos dominios.
-- [ ] **Capa 8 — Pulido final:** disclaimer en producción, README final con instrucciones de demo.
+- [x] **Capa 8 — Pulido final:** disclaimer en producción, README final con instrucciones de demo.
 
 Después de cada capa el implementador pausa y pide verificación al usuario antes de continuar.
 

@@ -91,6 +91,44 @@ Preguntas para validar la extensión sobre `https://www.tqconfiable.com/`. Empie
 
 Para reportar fallos: la pregunta exacta + la respuesta + screenshot del log expandido `[qa-orchestrator]` (chosen / primary / fallback).
 
+## Día de la demo — checklist y tips
+
+### Pre-flight (24 h antes)
+
+- [ ] Confirmar Chrome ≥ 138 con flag `chrome://flags/#prompt-api-for-gemini-nano` en `Enabled` y reinicio hecho.
+- [ ] `await LanguageModel.availability()` devuelve `available` (no `downloadable`). Si está en `downloadable`, **descargar antes** — son ~2 GB, no se descargan en vivo.
+- [ ] La extensión está cargada en `chrome://extensions/` sin errores rojos. Toggle ON.
+- [ ] Visitar `https://www.tqconfiable.com/` y `https://www.tqfarma.com/` y verificar que la burbuja aparece sobre ambos.
+- [ ] Correr al menos las 5 primeras preguntas de la batería; ninguna debería fallar con error técnico.
+- [ ] Probar offline: desconectar wifi → la burbuja sigue respondiendo → narrativa "cero red" verificada.
+
+### Orden sugerido de la demo (≈8 min)
+
+1. **Setup (1 min)** — abrir `https://www.tqconfiable.com/`. La burbuja ya está ahí. "Esto se inyectó con una extensión solo para mostrarles cómo se vería embebido en su sitio".
+2. **Pregunta básica de página actual (1.5 min)** — "¿Qué hace Tecnoquímicas?". Mostrar la respuesta + cita de fuente. Abrir DevTools y mostrar el log `[qa-orchestrator]` con `chosen` y `fallback`.
+3. **Pregunta que demuestra el sitemap (1.5 min)** — "¿Cuáles son los beneficios de trabajar en TQ?". Resaltar que aunque no estábamos en `/trabaja/beneficios/`, el bot encontró la página correcta.
+4. **Test offline (1 min)** — desconectar wifi, hacer otra pregunta. "Sin internet, sigue funcionando porque el modelo está en el dispositivo".
+5. **Adopción en producción (1.5 min)** — abrir el `README.md`, mostrar el bloque "Uso en producción". "Para integrarlo en su sitio, copian la carpeta `component/` y agregan un tag — fin".
+6. **Q&A y narrativa de costos (1.5 min)** — "Cero costo de inferencia, cero latencia de red, datos del usuario nunca salen del navegador".
+
+### Qué NO demostrar
+
+- Preguntas adversariales tipo "¿Cuándo se fundó TQ Farma?" en `tqconfiable.com` — el modelo on-device puede confundir entidades (ver [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md)). Quédate con preguntas de la batería 🟢.
+- Cambiar de pestaña a otro dominio fuera del manifest — la burbuja no aparece (es esperado pero genera ruido).
+- El standalone `demo/` durante la demo principal — solo si la extensión falla. Plan B documentado abajo.
+
+### Plan B si la extensión falla en vivo
+
+Síntoma: la burbuja no aparece sobre la web de TQ.
+
+1. Abrir DevTools → Console → buscar errores rojos.
+2. Si dice "CSP" o "blocked by Content Security Policy" → aplicar la mitigación documentada en `KNOWN_ISSUES.md` (sección "CSP del sitio bloquea la inyección").
+3. Si nada se entiende, **pivotar a la demo standalone**:
+   ```bash
+   cd integrated-chat && python3 -m http.server 8000
+   ```
+   Abrir `http://localhost:8000/demo/` y demostrar todo el flujo ahí. La narrativa cambia a "esto es exactamente el mismo componente; lo único que cambia es dónde se carga".
+
 ## Uso en producción (visión)
 
 Copiar la carpeta `component/` al sitio de la empresa y agregar el tag:
