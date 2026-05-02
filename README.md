@@ -6,38 +6,31 @@ El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarm
 
 ---
 
-## Chatbot integrado en la página web
+## Tabla de contenido
 
-Variante **client-side** del mismo Q&A, empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada directamente en los sitios reales de Tecnoquímicas (`tqconfiable.com` y `tqfarma.com`) mediante una extensión Chrome MV3. La inferencia se ejecuta **íntegramente en el navegador** con la **Prompt API nativa de Chrome + Gemini Nano on-device**, sin servidor intermedio.
-
-<details>
-<summary><b>🎥 Ver demo: chatbot integrado en la página oficial de TQ</b></summary>
-
-<br/>
-
-https://github.com/user-attachments/assets/1e33418b-e577-4ea3-9d4f-9e94a9b42264
-
-</details>
-
-### Ventajas
-
-- **Cero costo de inferencia.** El modelo corre on-device; no hay llamadas a APIs pagas como Gemini Cloud, OpenAI o Anthropic.
-- **Privacidad total.** Las preguntas del usuario y el contexto de la página nunca salen del navegador - cumple por diseño con políticas estrictas de manejo de datos.
-- **Funciona sin red.** Tras la descarga inicial del modelo (~2 GB, una sola vez), el chatbot responde offline.
-- **Latencia mínima.** Sin round-trip a un servidor de inferencia: la respuesta se genera localmente.
-- **Integración de una línea.** Para adoptarlo en producción basta con copiar la carpeta `component/` y añadir un tag `<company-chat>` al HTML.
-- **Sin infraestructura que mantener.** No hay backend, ni claves API que rotar, ni cuotas de uso.
-
-### Funciones principales
-
-- **Web Component encapsulado** (`<company-chat>`) con Shadow DOM: estilos aislados, no contamina ni hereda CSS del sitio anfitrión.
-- **Burbuja flotante configurable** vía atributos: `position` (`bottom-right` · `bottom-left` · `top-right` · `top-left`), `accent-color`, `placeholder`, `sitemap-url`.
-- **Ranking semántico sobre el sitemap.xml** del sitio anfitrión: ante cada pregunta, el componente identifica la página más relevante y la usa como contexto de la respuesta.
-- **Protocolo anti-alucinación honesto.** Cuando la información no está en el sitio (datos privados, sueldos, contactos personales) responde explícitamente con `not-found` en lugar de inventar.
-- **Extensión Chrome MV3 incluida** (`integrated-chat/extension/`) que inyecta el componente sobre `tqconfiable.com` y `tqfarma.com` para demos sin tocar los sitios productivos.
-- **Demo standalone servible localmente** (`integrated-chat/demo/`) para validar el componente sin instalar la extensión.
-
-> Instrucciones de instalación, habilitación de la Prompt API en Chrome, batería de preguntas de prueba y guía de adopción en producción: [`integrated-chat/README.md`](./integrated-chat/README.md).
+- [Características](#características)
+- [Stack tecnológico](#stack-tecnológico)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Instalación](#instalación)
+  - [Requisitos previos](#requisitos-previos)
+  - [1. Clonar e instalar dependencias](#1-clonar-e-instalar-dependencias)
+  - [2. Configurar la API Key](#2-configurar-la-api-key)
+- [Uso](#uso)
+  - [Qué genera cada etapa](#qué-genera-cada-etapa)
+- [Arquitectura](#arquitectura)
+  - [Diagrama de arquitectura - pipeline de datos](#diagrama-de-arquitectura---pipeline-de-datos)
+  - [Diagrama de secuencia - runtime de una pregunta](#diagrama-de-secuencia---runtime-de-una-pregunta)
+  - [Notas de diseño](#notas-de-diseño)
+- [Fuentes de datos](#fuentes-de-datos)
+- [Personalización](#personalización)
+  - [Añadir una nueva sección al scraping](#añadir-una-nueva-sección-al-scraping)
+  - [Modificar los prompts](#modificar-los-prompts)
+  - [Ajustar el truncamiento de la KB](#ajustar-el-truncamiento-de-la-kb)
+- [Métricas actuales de la Knowledge Base](#métricas-actuales-de-la-knowledge-base)
+- [Limitaciones conocidas](#limitaciones-conocidas)
+- [Chatbot integrado en la página web](#chatbot-integrado-en-la-página-web)
+  - [Ventajas](#ventajas)
+  - [Funciones principales](#funciones-principales)
 
 ---
 
@@ -313,6 +306,35 @@ En `qa_system.load_knowledge_base()`, el slice `[:15000]` limita cuánto context
 
 ---
 
-## Licencia
+## Chatbot integrado en la página web
 
-Proyecto académico. Los datos extraídos pertenecen a **Tecnoquímicas S.A.** y se usan únicamente con fines educativos.
+Variante **client-side** del mismo Q&A, empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada directamente en los sitios reales de Tecnoquímicas (`tqconfiable.com` y `tqfarma.com`) mediante una extensión Chrome MV3. La inferencia se ejecuta **íntegramente en el navegador** con la **Prompt API nativa de Chrome + Gemini Nano on-device**, sin servidor intermedio.
+
+<details>
+<summary><b>🎥 Ver demo: chatbot integrado en la página oficial de TQ</b></summary>
+
+<br/>
+
+https://github.com/user-attachments/assets/1e33418b-e577-4ea3-9d4f-9e94a9b42264
+
+</details>
+
+### Ventajas
+
+- **Cero costo de inferencia.** El modelo corre on-device; no hay llamadas a APIs pagas como Gemini Cloud, OpenAI o Anthropic.
+- **Privacidad total.** Las preguntas del usuario y el contexto de la página nunca salen del navegador - cumple por diseño con políticas estrictas de manejo de datos.
+- **Funciona sin red.** Tras la descarga inicial del modelo (~2 GB, una sola vez), el chatbot responde offline.
+- **Latencia mínima.** Sin round-trip a un servidor de inferencia: la respuesta se genera localmente.
+- **Integración de una línea.** Para adoptarlo en producción basta con copiar la carpeta `component/` y añadir un tag `<company-chat>` al HTML.
+- **Sin infraestructura que mantener.** No hay backend, ni claves API que rotar, ni cuotas de uso.
+
+### Funciones principales
+
+- **Web Component encapsulado** (`<company-chat>`) con Shadow DOM: estilos aislados, no contamina ni hereda CSS del sitio anfitrión.
+- **Burbuja flotante configurable** vía atributos: `position` (`bottom-right` · `bottom-left` · `top-right` · `top-left`), `accent-color`, `placeholder`, `sitemap-url`.
+- **Ranking semántico sobre el sitemap.xml** del sitio anfitrión: ante cada pregunta, el componente identifica la página más relevante y la usa como contexto de la respuesta.
+- **Protocolo anti-alucinación honesto.** Cuando la información no está en el sitio (datos privados, sueldos, contactos personales) responde explícitamente con `not-found` en lugar de inventar.
+- **Extensión Chrome MV3 incluida** (`integrated-chat/extension/`) que inyecta el componente sobre `tqconfiable.com` y `tqfarma.com` para demos sin tocar los sitios productivos.
+- **Demo standalone servible localmente** (`integrated-chat/demo/`) para validar el componente sin instalar la extensión.
+
+> Instrucciones de instalación, habilitación de la Prompt API en Chrome, batería de preguntas de prueba y guía de adopción en producción: [`integrated-chat/README.md`](./integrated-chat/README.md).
