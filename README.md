@@ -161,7 +161,7 @@ El sistema combina una **pipeline de construcción offline** (scraping → conso
 ```mermaid
 flowchart LR
     subgraph Sources["Fuentes oficiales"]
-        S1["tqconfiable.com<br/>47 URLs"]
+        S1["tqconfiable.com<br/>56 URLs"]
         S2["tqfarma.com<br/>9 URLs"]
     end
 
