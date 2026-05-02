@@ -312,14 +312,11 @@ En `qa_system.load_knowledge_base()`, el slice `[:15000]` limita cuánto context
 
 Variante **client-side** del mismo Q&A, empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada directamente en los sitios reales de Tecnoquímicas (`tqconfiable.com` y `tqfarma.com`) mediante una extensión Chrome MV3. La inferencia se ejecuta **íntegramente en el navegador** con la **Prompt API nativa de Chrome + Gemini Nano on-device**, sin servidor intermedio.
 
-<details>
-<summary><b>🎥 Ver demo: chatbot integrado en la página oficial de TQ</b></summary>
+### 🎥 Demo: 
 
-<br/>
+chatbot integrado en la página oficial de TQ (Solo en modo desarrollo con la extención instalada localmente)
 
 https://github.com/user-attachments/assets/1e33418b-e577-4ea3-9d4f-9e94a9b42264
-
-</details>
 
 ### Ventajas
 
