@@ -11,7 +11,7 @@ El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarm
 Variante **client-side** del mismo Q&A, empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada directamente en los sitios reales de Tecnoquímicas (`tqconfiable.com` y `tqfarma.com`) mediante una extensión Chrome MV3. La inferencia se ejecuta **íntegramente en el navegador** con la **Prompt API nativa de Chrome + Gemini Nano on-device**, sin servidor intermedio.
 
 <details>
-<summary><b>▶ Ver demo: chatbot integrado en la página oficial de TQ</b></summary>
+<summary><b>🎥 Ver demo: chatbot integrado en la página oficial de TQ</b></summary>
 
 <br/>
 
