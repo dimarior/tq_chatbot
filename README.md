@@ -4,7 +4,40 @@ Sistema de Preguntas y Respuestas (Q&A) sobre **Tecnoquímicas S.A. (TQ)** const
 
 El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarma.com`, la consolida en una base de conocimiento textual, y la usa como contexto único de un LLM para responder preguntas, generar un resumen ejecutivo y un panel de FAQ - todo con prompts diseñados para minimizar alucinaciones.
 
-> **Sub-proyecto paralelo `integrated-chat/`:** alternativa **client-side** que entrega el mismo Q&A pero corriendo enteramente en el navegador con la API nativa de IA de Chrome (Prompt API + Gemini Nano on-device). Empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada en los sitios reales de TQ vía una extensión Chrome MV3. Cero costo de inferencia, cero red para responder, datos del usuario nunca salen del navegador. Es independiente del flujo Python documentado abajo. Detalles en [`integrated-chat/README.md`](./integrated-chat/README.md).
+---
+
+## Chatbot integrado en la página web
+
+Variante **client-side** del mismo Q&A, empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada directamente en los sitios reales de Tecnoquímicas (`tqconfiable.com` y `tqfarma.com`) mediante una extensión Chrome MV3. La inferencia se ejecuta **íntegramente en el navegador** con la **Prompt API nativa de Chrome + Gemini Nano on-device**, sin servidor intermedio.
+
+<details>
+<summary><b>▶ Ver demo: chatbot integrado en la página oficial de TQ</b></summary>
+
+<br/>
+
+https://github.com/user-attachments/assets/1e33418b-e577-4ea3-9d4f-9e94a9b42264
+
+</details>
+
+### Ventajas
+
+- **Cero costo de inferencia.** El modelo corre on-device; no hay llamadas a APIs pagas como Gemini Cloud, OpenAI o Anthropic.
+- **Privacidad total.** Las preguntas del usuario y el contexto de la página nunca salen del navegador - cumple por diseño con políticas estrictas de manejo de datos.
+- **Funciona sin red.** Tras la descarga inicial del modelo (~2 GB, una sola vez), el chatbot responde offline.
+- **Latencia mínima.** Sin round-trip a un servidor de inferencia: la respuesta se genera localmente.
+- **Integración de una línea.** Para adoptarlo en producción basta con copiar la carpeta `component/` y añadir un tag `<company-chat>` al HTML.
+- **Sin infraestructura que mantener.** No hay backend, ni claves API que rotar, ni cuotas de uso.
+
+### Funciones principales
+
+- **Web Component encapsulado** (`<company-chat>`) con Shadow DOM: estilos aislados, no contamina ni hereda CSS del sitio anfitrión.
+- **Burbuja flotante configurable** vía atributos: `position` (`bottom-right` · `bottom-left` · `top-right` · `top-left`), `accent-color`, `placeholder`, `sitemap-url`.
+- **Ranking semántico sobre el sitemap.xml** del sitio anfitrión: ante cada pregunta, el componente identifica la página más relevante y la usa como contexto de la respuesta.
+- **Protocolo anti-alucinación honesto.** Cuando la información no está en el sitio (datos privados, sueldos, contactos personales) responde explícitamente con `not-found` en lugar de inventar.
+- **Extensión Chrome MV3 incluida** (`integrated-chat/extension/`) que inyecta el componente sobre `tqconfiable.com` y `tqfarma.com` para demos sin tocar los sitios productivos.
+- **Demo standalone servible localmente** (`integrated-chat/demo/`) para validar el componente sin instalar la extensión.
+
+> Instrucciones de instalación, habilitación de la Prompt API en Chrome, batería de preguntas de prueba y guía de adopción en producción: [`integrated-chat/README.md`](./integrated-chat/README.md).
 
 ---
 
