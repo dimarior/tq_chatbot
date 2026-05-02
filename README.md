@@ -4,6 +4,8 @@ Sistema de Preguntas y Respuestas (Q&A) sobre **Tecnoquímicas S.A. (TQ)** const
 
 El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarma.com`, la consolida en una base de conocimiento textual, y la usa como contexto único de un LLM para responder preguntas, generar un resumen ejecutivo y un panel de FAQ - todo con prompts diseñados para minimizar alucinaciones.
 
+> 💡 **Extensión posterior al entregable:** se incluye también una variante **client-side** que corre on-device en el navegador con la Prompt API de Chrome + Gemini Nano, inyectable en los sitios reales de TQ vía Web Component — ver [Chatbot integrado en la página web](#chatbot-integrado-en-la-página-web).
+
 ---
 
 ## Tabla de contenido
