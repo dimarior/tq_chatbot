@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+
+from apps.api.rag.prompt import SYSTEM_PROMPT, build_user_prompt
+from apps.api.rag.retriever import retrieve
+from apps.api.schemas import ChatRequest, Source
+
+
+router = APIRouter()
+
+
+def _sse(data: str, event: str | None = None) -> str:
+    prefix = f"event: {event}\n" if event else ""
+    # SSE requires data lines to be prefixed; newlines inside data must be split.
+    safe = data.replace("\r\n", "\n")
+    lines = "\n".join(f"data: {ln}" for ln in safe.split("\n"))
+    return f"{prefix}{lines}\n\n"
+
+
+@router.post("/api/chat")
+async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
+    app = request.app
+    settings = app.state.settings
+    pool = app.state.pool
+    embedder = app.state.embedder
+    ollama = app.state.ollama
+
+    async def gen() -> AsyncIterator[str]:
+        try:
+            chunks = await retrieve(pool, embedder, payload.question, k=settings.top_k)
+            sources = [
+                Source(url=c.url, title=c.title, score=c.score).model_dump()
+                for c in chunks
+            ]
+            yield _sse(json.dumps(sources, ensure_ascii=False), event="sources")
+
+            user_prompt = build_user_prompt(payload.question, chunks, settings.max_context_chars)
+            history = [m.model_dump() for m in payload.history]
+
+            async for token in ollama.stream_chat(SYSTEM_PROMPT, user_prompt, history=history):
+                yield _sse(token, event="token")
+
+            yield _sse("ok", event="done")
+        except Exception as e:  # surfaced as a friendly Spanish error to the UI
+            err = {"error": "Hubo un problema al procesar tu pregunta.", "detail": str(e)}
+            yield _sse(json.dumps(err, ensure_ascii=False), event="error")
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
