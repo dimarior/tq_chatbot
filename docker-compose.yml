@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: tq
+      POSTGRES_PASSWORD: tq
+      POSTGRES_DB: tq
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tq -d tq"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
+      EMBED_MODEL: ${EMBED_MODEL:-qwen3-embedding:0.6b}
+    entrypoint: >
+      sh -c "
+        echo '>> Pulling LLM ${LLM_MODEL:-qwen3:8b}...';
+        ollama pull ${LLM_MODEL:-qwen3:8b} || echo 'WARN: LLM pull failed';
+        echo '>> Pulling embedding model ${EMBED_MODEL:-qwen3-embedding:0.6b}...';
+        ollama pull ${EMBED_MODEL:-qwen3-embedding:0.6b} || (
+          echo 'WARN: Qwen3-Embedding tag missing; trying mirror dengcao/Qwen3-Embedding-0.6B';
+          ollama pull dengcao/Qwen3-Embedding-0.6B || echo 'WARN: also failed — set EMBED_BACKEND=sentence-transformers'
+        );
+        echo '>> Done.';
+      "
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      DATABASE_URL: postgresql://tq:tq@postgres:5432/tq
+      LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
+      EMBED_BACKEND: ${EMBED_BACKEND:-ollama}
+      EMBED_MODEL: ${EMBED_MODEL:-qwen3-embedding:0.6b}
+      EMBED_DIMS: ${EMBED_DIMS:-1024}
+      TOP_K: ${TOP_K:-6}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps:/app/apps:ro
+      - ./frontend:/app/frontend:ro
+
+volumes:
+  postgres_data:
+  ollama_data:
