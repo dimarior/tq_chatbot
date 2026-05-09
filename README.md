@@ -1,339 +1,114 @@
-# TQ-Confiable - Sistema Q&A Semántico para Tecnoquímicas S.A.
+# TQ-Chatbot
 
-Sistema de Preguntas y Respuestas (Q&A) sobre **Tecnoquímicas S.A. (TQ)** construido sobre Google Gemini 2.5 Flash y LangChain, con interfaz Streamlit. Trabajo académico para el **Taller 1 - Técnicas Avanzadas de IA Aplicadas en Modelos de Lenguaje**.
+Chatbot RAG sobre Tecnoquímicas S.A. — backend en FastAPI, modelo local Qwen3-8B vía Ollama, vector store en Postgres + pgvector, y un widget de burbuja flotante en cualquier landing.
 
-El sistema extrae información oficial de los sitios `tqconfiable.com` y `tqfarma.com`, la consolida en una base de conocimiento textual, y la usa como contexto único de un LLM para responder preguntas, generar un resumen ejecutivo y un panel de FAQ - todo con prompts diseñados para minimizar alucinaciones.
+> **Estado:** Reescritura completa desde cero (mayo 2026). El proyecto anterior (Streamlit + inyección de KB en prompt) fue reemplazado.
 
-> 💡 **Extensión posterior al entregable:** se incluye también una variante **client-side** que corre on-device en el navegador con la Prompt API de Chrome + Gemini Nano, inyectable en los sitios reales de TQ vía Web Component — ver [Chatbot integrado en la página web](#chatbot-integrado-en-la-página-web).
+## Objetivos
 
----
+1. **RAG real**: vector search con HNSW + cosine sobre chunks embebidos, citando fuentes en cada respuesta.
+2. **100 % local**: LLM, embeddings y BD corren en la máquina del desarrollador (M1 Pro 16 GB target).
+3. **Reproducible**: `docker compose up` levanta todo. Sin "funciona en mi máquina".
+4. **Pipeline manual e idempotente**: dos scripts (`fetch_sitemaps.py`, `ingest_to_rag.py`) se ejecutan a mano, pueden re-correrse sin efectos secundarios.
+5. **Frontend ligero**: una página dummy con un bubble en bottom-right que abre el chat — sin React, sin build step.
 
-## Tabla de contenido
+## Stack
 
-- [Características](#características)
-- [Stack tecnológico](#stack-tecnológico)
-- [Estructura del repositorio](#estructura-del-repositorio)
-- [Instalación](#instalación)
-  - [Requisitos previos](#requisitos-previos)
-  - [1. Clonar e instalar dependencias](#1-clonar-e-instalar-dependencias)
-  - [2. Configurar la API Key](#2-configurar-la-api-key)
-- [Uso](#uso)
-  - [Qué genera cada etapa](#qué-genera-cada-etapa)
-- [Arquitectura](#arquitectura)
-  - [Diagrama de arquitectura - pipeline de datos](#diagrama-de-arquitectura---pipeline-de-datos)
-  - [Diagrama de secuencia - runtime de una pregunta](#diagrama-de-secuencia---runtime-de-una-pregunta)
-  - [Notas de diseño](#notas-de-diseño)
-- [Fuentes de datos](#fuentes-de-datos)
-- [Personalización](#personalización)
-  - [Añadir una nueva sección al scraping](#añadir-una-nueva-sección-al-scraping)
-  - [Modificar los prompts](#modificar-los-prompts)
-  - [Ajustar el truncamiento de la KB](#ajustar-el-truncamiento-de-la-kb)
-- [Métricas actuales de la Knowledge Base](#métricas-actuales-de-la-knowledge-base)
-- [Limitaciones conocidas](#limitaciones-conocidas)
-- [Chatbot integrado en la página web](#chatbot-integrado-en-la-página-web)
-  - [Ventajas](#ventajas)
-  - [Funciones principales](#funciones-principales)
-
----
-
-## Características
-
-- **Q&A contextual** con protocolo de triage en 4 niveles (respuesta total, parcial, no disponible, tema sensible).
-- **Resumen ejecutivo** estilo C-suite (350–450 palabras) generado a partir de la base de conocimiento.
-- **FAQ automático** con 20 preguntas distribuidas por audiencia (clientes, inversionistas, talento).
-- **Web scraping de dos motores**: Selenium + Chrome headless para `tqconfiable.com` (renderizado JS) y `requests` + BeautifulSoup para `tqfarma.com`.
-- **Anti-alucinación**: el modelo responde exclusivamente con datos del contexto cargado; los prompts incluyen un *quality gate* de auto-auditoría.
-- **Interfaz Streamlit** con tema oscuro corporativo y cuatro pestañas (Q&A, Resumen, FAQ, Arquitectura).
-
----
-
-## Stack tecnológico
-
-| Componente | Tecnología |
+| Capa | Tecnología |
 |---|---|
-| LLM | Google Gemini 2.5 Flash (`gemini-2.5-flash`, `temperature=0.1`) |
-| Orquestación | LangChain (`langchain-core`, `langchain-google-genai`) |
-| Scraping JS | Selenium 4 + Chrome headless + `webdriver-manager` |
-| Scraping HTTP | `requests` + BeautifulSoup 4 |
-| UI | Streamlit |
-| Lenguaje | Python 3.14 |
-| Variables de entorno | `python-dotenv` |
+| Runtime | Python 3.12, `uv` |
+| API | FastAPI + Pydantic v2 + asyncpg |
+| LLM | Qwen3-8B-Instruct vía Ollama |
+| Embeddings | Qwen3-Embedding-0.6B (1024 dim) |
+| Vector DB | PostgreSQL 16 + pgvector (HNSW, cosine) |
+| Scraping | httpx + selectolax + Playwright (fallback) + tenacity |
+| Chunking | LangChain `RecursiveCharacterTextSplitter` |
+| Frontend | HTML estático + Tailwind (Play CDN) + Alpine.js + HTMX (SSE) |
+| Streaming | SSE (Server-Sent Events) |
+| Infra | docker-compose |
 
----
+Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-## Estructura del repositorio
+## Prerrequisitos
 
-El repositorio tiene dos niveles: la **raíz** contiene metadata del proyecto Python, mientras que el **subdirectorio `tq_chatbot/`** contiene el código de la aplicación.
+- Docker Desktop con ≥ 8 GB asignados (recomendado 12 GB)
+- ~10 GB de disco libre para modelos
+- Python 3.12 + `uv` (sólo para correr los scripts de fetch/ingest desde host)
 
-**Raíz del repositorio:**
+## Quickstart
 
-| Archivo | Rol |
-|---|---|
-| `pyproject.toml` | Metadata del proyecto y dependencias (uv / pip) |
-| `uv.lock` | Lock file de `uv` |
-| `main.py` | Stub - no es el entrypoint real |
-| `README.md` | Este archivo |
-| `CLAUDE.md` | Guía para Claude Code |
+```bash
+# 1. Configurar entorno
+cp .env.example .env
 
-**Subdirectorio `tq_chatbot/` - código de la aplicación:**
+# 2. Levantar stack (postgres + ollama + api). Primer arranque descarga modelos (~6 GB).
+docker compose up -d
+docker compose logs -f ollama-init   # esperar a que termine de pullear modelos
 
-| Archivo | Etapa | Rol |
+# 3. Scrapear sitios (idempotente — re-ejecutable)
+uv sync --extra scrape
+uv run playwright install chromium
+uv run python scripts/fetch_sitemaps.py --site all
+
+# 4. Indexar al RAG (idempotente)
+uv run python scripts/ingest_to_rag.py
+
+# 5. Abrir el chat
+open http://localhost:8000
+```
+
+## Comandos útiles
+
+```bash
+# Re-fetch forzado (ignora content_hash existente)
+uv run python scripts/fetch_sitemaps.py --site all --force
+
+# Sólo un sitio
+uv run python scripts/fetch_sitemaps.py --site tqfarma
+
+# Ingesta dry-run (cuenta cambios sin escribir)
+uv run python scripts/ingest_to_rag.py --dry-run
+
+# Reset total del RAG
+uv run python scripts/reset_rag.py
+
+# Health check
+curl http://localhost:8000/api/health
+```
+
+## Estructura
+
+```
+.
+├── apps/api/              # FastAPI app
+│   ├── core/              # config + db pool
+│   ├── routers/           # /api/chat (SSE), /api/health
+│   ├── rag/               # embeddings, retriever, prompt
+│   └── llm/               # Ollama client
+├── frontend/              # landing + bubble widget (servido por FastAPI)
+├── scripts/               # fetch_sitemaps.py, ingest_to_rag.py, reset_rag.py
+├── migrations/            # 001_init.sql (auto-aplicado por postgres init)
+├── data/                  # raw + processed (gitignored)
+├── docs/ARCHITECTURE.md   # decisiones (ADRs)
+├── docker-compose.yml
+└── pyproject.toml
+```
+
+## Variables de entorno
+
+Ver `.env.example`. Las más importantes:
+
+| Variable | Default | Notas |
 |---|---|---|
-| `scraper.py` | 1 | Scraping de `tqconfiable.com` (Selenium) y `tqfarma.com` (requests) |
-| `knowledge_base.py` | 2 | Limpieza, deduplicación y chunking del texto extraído |
-| `qa_system.py` | 3 | Cadenas LangChain + 3 prompts (`SUMMARY`, `FAQ`, `QA`) |
-| `app.py` | 4 | Interfaz Streamlit con 4 pestañas |
-| `requirements.txt` | - | Dependencias (alternativa al `pyproject.toml` raíz) |
-| `raw_data.json` | generado | Salida de `scraper.py` |
-| `knowledge_base.txt` | generado | Salida de `knowledge_base.py` (consumido por `qa_system.py`) |
-| `chunks.json` | generado | Salida de `knowledge_base.py` (no consumido actualmente) |
-| `.env` | manual | Debe contener `GOOGLE_API_KEY` |
+| `LLM_MODEL` | `qwen3:8b` | Cambiar a `qwen3:4b` si tienes < 12 GB de RAM. |
+| `EMBED_MODEL` | `qwen3-embedding:0.6b` | Si Ollama no tiene el tag, usar `EMBED_BACKEND=sentence-transformers`. |
+| `EMBED_DIMS` | `1024` | Debe coincidir con el modelo. Cambiar requiere reset del RAG. |
+| `TOP_K` | `6` | Chunks recuperados por consulta. |
+| `OLLAMA_HOST` | `http://ollama:11434` | Dentro de Docker. Para correr scripts desde host: `http://localhost:11434`. |
+| `DATABASE_URL` | `postgresql://tq:tq@postgres:5432/tq` | Idem — usar `localhost` desde host. |
 
-> **Importante:** todos los scripts usan rutas relativas. Ejecútalos desde el subdirectorio `tq_chatbot/`, no desde la raíz del repositorio.
+## Contribuir
 
----
+Convención de commits: `tipo(scope): mensaje en español` (`feat`, `fix`, `chore`, `docs`, `refactor`).
 
-## Instalación
-
-### Requisitos previos
-
-- Python 3.14
-- Google Chrome o Chromium instalado localmente (para Selenium)
-- Una API Key de Google Gemini - [obtenla gratis aquí](https://aistudio.google.com/app/apikey)
-
-### 1. Clonar e instalar dependencias
-
-```bash
-git clone <url-del-repo>
-cd tq_chatbot/tq_chatbot
-pip install -r requirements.txt
-```
-
-Alternativa con `uv` desde la raíz:
-
-```bash
-uv sync
-```
-
-### 2. Configurar la API Key
-
-Crea un archivo `.env` dentro de `tq_chatbot/tq_chatbot/`:
-
-```env
-GOOGLE_API_KEY=AIzaSy_TU_CLAVE_AQUI
-```
-
-Para despliegue en Streamlit Cloud, alternativamente puedes definir el secreto en `.streamlit/secrets.toml`:
-
-```toml
-GOOGLE_API_KEY = "AIzaSy_TU_CLAVE_AQUI"
-```
-
-`qa_system.py` intentará primero `st.secrets`, y si no existe usará la variable de entorno cargada desde `.env`.
-
----
-
-## Uso
-
-El proyecto sigue una **pipeline de 3 etapas que debe ejecutarse en orden**, ya que cada paso depende del archivo generado por el anterior.
-
-```bash
-cd tq_chatbot          # entrar al subdirectorio de código
-
-# Etapa 1: Scraping (~5–10 min, requiere conexión y Chrome)
-python scraper.py
-
-# Etapa 2: Construcción de la Knowledge Base (segundos)
-python knowledge_base.py
-
-# Etapa 3: Levantar la interfaz Streamlit
-python -m streamlit run app.py
-```
-
-La aplicación abrirá en `http://localhost:8501`.
-
-Para acceder a la version desplegada en la nube:
-`https://tq-chatbot-taaml.streamlit.app`
-
-1. Sube el repositorio a GitHub
-2. Ve a https://share.streamlit.io e inicia sesion con tu cuenta de GitHub
-3. Click en New app, selecciona el repositorio y pon como Main file path: tq_chatbot/app.py
-4. En Advanced settings busca la seccion Secrets y agrega tu API key asi:
-
-   GOOGLE_API_KEY = "AIzaSy_TU_CLAVE_AQUI"
-
-5. Click en Deploy. La app estara disponible en tu URL de Streamlit Cloud en 2-3 minutos.
-
-Nota: el archivo .env nunca se sube al repositorio. En local la app
-lee la API key del .env, y en Streamlit Cloud la lee de los Secrets
-configurados en el paso anterior.
-
-### Qué genera cada etapa
-
-| Etapa | Entrada | Salida |
-|---|---|---|
-| `scraper.py` | URLs de `tqconfiable.com` y `tqfarma.com` (hardcoded) | `raw_data.json` |
-| `knowledge_base.py` | `raw_data.json` | `knowledge_base.txt`, `chunks.json` |
-| `app.py` | `knowledge_base.txt` + `GOOGLE_API_KEY` | UI en Streamlit |
-
-> Los archivos `raw_data.json`, `knowledge_base.txt` y `chunks.json` ya vienen incluidos en el repositorio, por lo que puedes saltarte directamente a `streamlit run app.py` si solo quieres probar la interfaz.
-
----
-
-## Arquitectura
-
-El sistema combina una **pipeline de construcción offline** (scraping → consolidación de la base de conocimiento) con una **interacción online** entre el usuario y Gemini mediada por LangChain. Por eso se documenta con dos diagramas complementarios: un **flowchart** para la arquitectura de datos y un **sequence diagram** para el runtime de Q&A.
-
-### Diagrama de arquitectura - pipeline de datos
-
-```mermaid
-flowchart LR
-    subgraph Sources["Fuentes oficiales"]
-        S1["tqconfiable.com<br/>56 URLs"]
-        S2["tqfarma.com<br/>9 URLs"]
-    end
-
-    subgraph Build["Pipeline de construcción (offline)"]
-        SC["scraper.py<br/>Selenium · requests"]
-        KB["knowledge_base.py<br/>clean_text · build_chunks(800/150)<br/>ORDER_PRIORITY"]
-    end
-
-    subgraph Artifacts["Artefactos persistidos"]
-        RD[("raw_data.json")]
-        KT[("knowledge_base.txt")]
-        CJ[("chunks.json<br/><i>no consumido</i>")]
-    end
-
-    subgraph Runtime["Runtime (online)"]
-        QS["qa_system.py<br/>TQKnowledgeSystem<br/>SUMMARY · FAQ · QA chains"]
-        APP["app.py<br/>Streamlit UI · 4 tabs"]
-        GM(["Gemini 2.5 Flash<br/>temperature = 0.1"])
-    end
-
-    S1 --> SC
-    S2 --> SC
-    SC --> RD
-    RD --> KB
-    KB --> KT
-    KB --> CJ
-    KT --> QS
-    QS <--> GM
-    APP --> QS
-    User((Usuario)) --> APP
-    APP --> User
-```
-
-### Diagrama de secuencia - runtime de una pregunta
-
-```mermaid
-sequenceDiagram
-    actor U as Usuario
-    participant ST as Streamlit (app.py)
-    participant TQ as TQKnowledgeSystem
-    participant LC as LangChain (qa_chain)
-    participant GM as Gemini 2.5 Flash
-
-    U->>ST: Escribe pregunta y hace clic en "Preguntar"
-    ST->>TQ: answer_question(q)
-    Note over TQ: load_knowledge_base()<br/>knowledge_base.txt[:15000]
-    TQ->>LC: invoke({knowledge_base, question})
-    Note over LC: Renderiza QA_PROMPT<br/>(triage de 4 protocolos:<br/>TOTAL · PARCIAL · NULA · SENSIBLE)
-    LC->>GM: chat completion (system + human)
-    GM-->>LC: respuesta en español
-    LC-->>TQ: string parseado (StrOutputParser)
-    TQ-->>ST: respuesta
-    ST-->>U: Renderiza en panel de respuesta
-```
-
-> Las pestañas **Resumen Ejecutivo** y **FAQ** siguen el mismo patrón pero invocan `summary_chain` y `faq_chain` respectivamente, sin parámetro `question`.
-
-### Notas de diseño
-
-- **Sin RAG ni vector store.** El sistema inyecta la base de conocimiento completa (truncada a **15 000 caracteres** en `qa_system.load_knowledge_base`) en el *system prompt* de cada llamada al LLM. Esto es *zero-shot grounding*. Aunque `chunks.json` se genera con metadatos para retrieval, **actualmente no se usa**.
-- **Orden de secciones controlado.** `ORDER_PRIORITY` en `knowledge_base.py` define el orden con que las secciones se concatenan en `knowledge_base.txt`: identidad corporativa primero, noticias al final. Esto influye en qué información sobrevive al truncamiento de 15 000 caracteres.
-- **Tres prompts especializados** (`SUMMARY_PROMPT`, `FAQ_PROMPT`, `QA_PROMPT`) escritos íntegramente en español, con fases explícitas (razonamiento interno → estructura del output → quality gate) y reglas anti-alucinación. Son el principal artefacto del proyecto.
-- **Protocolo de seguridad** en `QA_PROMPT`: temas sensibles (alertas sanitarias, retiros, litigios) son redirigidos a canales oficiales sin confirmar ni desmentir.
-
----
-
-## Fuentes de datos
-
-Todas las URLs scrapeadas son **fuentes oficiales** de Tecnoquímicas:
-
-- **`tqconfiable.com`** - sitio corporativo principal: identidad, misión/visión, historia, innovación, sostenibilidad, ofertas laborales, contacto, gobierno corporativo y un archivo completo de noticias.
-- **`tqfarma.com`** - portal médico oficial: vademécum (MK / OTC), medicamentos A–Z, biblioteca científica, guías de práctica clínica.
-
-Las listas completas de URLs están en `URLS_SELENIUM` y `URLS_REQUESTS` dentro de `scraper.py`.
-
----
-
-## Personalización
-
-### Añadir una nueva sección al scraping
-
-1. Agregar la URL a `URLS_SELENIUM` o `URLS_REQUESTS` en `scraper.py` (usar prefijo `tqfarma_` si la fuente es tqfarma.com - `knowledge_base.py` lo usa para etiquetar el origen).
-2. Añadir la nueva clave de sección a `ORDER_PRIORITY` en `knowledge_base.py` para controlar su posición; si no se añade, queda al final.
-3. Re-ejecutar la pipeline: `python scraper.py && python knowledge_base.py`.
-
-### Modificar los prompts
-
-Los prompts viven en `qa_system.py` (`SUMMARY_PROMPT`, `FAQ_PROMPT`, `QA_PROMPT`). Mantener:
-
-- División system/human de `ChatPromptTemplate.from_messages`.
-- Placeholders `{knowledge_base}` (todos) y `{question}` (solo `QA_PROMPT`).
-- Idioma español.
-
-### Ajustar el truncamiento de la KB
-
-En `qa_system.load_knowledge_base()`, el slice `[:15000]` limita cuánto contexto recibe el LLM. Si la KB crece o cambias de modelo, ajusta este valor (Gemini 2.5 Flash soporta contextos mucho más grandes).
-
----
-
-## Métricas actuales de la Knowledge Base
-
-- ~48.630 caracteres de texto consolidado
-- 72 chunks semánticos (chunk size 800, overlap 150)
-- 56 URLs procesadas de fuentes oficiales
-
-> Estos valores también aparecen hardcoded en la pestaña "Arquitectura" de `app.py` y deben actualizarse manualmente si la KB se regenera con tamaños distintos.
-
----
-
-## Limitaciones conocidas
-
-- El truncamiento a 15 000 caracteres en `load_knowledge_base` puede dejar fuera secciones de menor prioridad (típicamente noticias antiguas).
-- `chunks.json` se genera pero no se consume - no hay retrieval semántico implementado.
-- El scraper depende de la estructura HTML actual de los sitios; cambios en el frontend de TQ requerirán ajustes en `extract_text` o en el listado de términos de navegación (`NAV_EXACT`).
-- Selenium requiere Chrome instalado localmente y conexión saliente a internet para `webdriver-manager`.
-
----
-
-## Chatbot integrado en la página web
-
-Variante **client-side** del mismo Q&A, empaquetada como Web Component (`<company-chat></company-chat>`) e inyectada directamente en los sitios reales de Tecnoquímicas (`tqconfiable.com` y `tqfarma.com`) mediante una extensión Chrome MV3. La inferencia se ejecuta **íntegramente en el navegador** con la **Prompt API nativa de Chrome + Gemini Nano on-device**, sin servidor intermedio.
-
-### 🎥 Demo: 
-
-chatbot integrado en la página oficial de TQ (Solo en modo desarrollo con la extención instalada localmente)
-
-https://github.com/user-attachments/assets/1e33418b-e577-4ea3-9d4f-9e94a9b42264
-
-### Ventajas
-
-- **Cero costo de inferencia.** El modelo corre on-device; no hay llamadas a APIs pagas como Gemini Cloud, OpenAI o Anthropic.
-- **Privacidad total.** Las preguntas del usuario y el contexto de la página nunca salen del navegador - cumple por diseño con políticas estrictas de manejo de datos.
-- **Funciona sin red.** Tras la descarga inicial del modelo (~2 GB, una sola vez), el chatbot responde offline.
-- **Latencia mínima.** Sin round-trip a un servidor de inferencia: la respuesta se genera localmente.
-- **Integración de una línea.** Para adoptarlo en producción basta con copiar la carpeta `component/` y añadir un tag `<company-chat>` al HTML.
-- **Sin infraestructura que mantener.** No hay backend, ni claves API que rotar, ni cuotas de uso.
-
-### Funciones principales
-
-- **Web Component encapsulado** (`<company-chat>`) con Shadow DOM: estilos aislados, no contamina ni hereda CSS del sitio anfitrión.
-- **Burbuja flotante configurable** vía atributos: `position` (`bottom-right` · `bottom-left` · `top-right` · `top-left`), `accent-color`, `placeholder`, `sitemap-url`.
-- **Ranking semántico sobre el sitemap.xml** del sitio anfitrión: ante cada pregunta, el componente identifica la página más relevante y la usa como contexto de la respuesta.
-- **Protocolo anti-alucinación honesto.** Cuando la información no está en el sitio (datos privados, sueldos, contactos personales) responde explícitamente con `not-found` en lugar de inventar.
-- **Extensión Chrome MV3 incluida** (`integrated-chat/extension/`) que inyecta el componente sobre `tqconfiable.com` y `tqfarma.com` para demos sin tocar los sitios productivos.
-- **Demo standalone servible localmente** (`integrated-chat/demo/`) para validar el componente sin instalar la extensión.
-
-> Instrucciones de instalación, habilitación de la Prompt API en Chrome, batería de preguntas de prueba y guía de adopción en producción: [`integrated-chat/README.md`](./integrated-chat/README.md).
+Idioma: todo el contenido user-facing (prompts, UI, mensajes de error) está en **español**. Los identificadores de código siguen en inglés.
