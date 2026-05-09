@@ -21,7 +21,7 @@ Chatbot RAG sobre Tecnoquímicas S.A. — backend en FastAPI, modelo local Qwen3
 | LLM | Qwen3-8B-Instruct vía Ollama |
 | Embeddings | Qwen3-Embedding-0.6B (1024 dim) |
 | Vector DB | PostgreSQL 16 + pgvector (HNSW, cosine) |
-| Scraping | httpx + selectolax + Playwright (fallback) + tenacity |
+| Scraping | [webclaw](https://github.com/0xMassi/webclaw) (Rust CLI) — `brew install` |
 | Chunking | LangChain `RecursiveCharacterTextSplitter` |
 | Frontend | HTML estático + Tailwind (Play CDN) + Alpine.js + HTMX (SSE) |
 | Streaming | SSE (Server-Sent Events) |
@@ -34,6 +34,10 @@ Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - Docker Desktop con ≥ 8 GB asignados (recomendado 12 GB)
 - ~10 GB de disco libre para modelos
 - Python 3.12 + `uv` (sólo para correr los scripts de fetch/ingest desde host)
+- [`webclaw`](https://github.com/0xMassi/webclaw) en el PATH para el script de scraping:
+  ```bash
+  brew install 0xMassi/webclaw/webclaw
+  ```
 
 ## Quickstart
 
@@ -45,9 +49,8 @@ cp .env.example .env
 docker compose up -d
 docker compose logs -f ollama-init   # esperar a que termine de pullear modelos
 
-# 3. Scrapear sitios (idempotente — re-ejecutable)
-uv sync --extra scrape
-uv run playwright install chromium
+# 3. Scrapear sitios (idempotente — re-ejecutable). Requiere `webclaw` instalado.
+uv sync
 uv run python scripts/fetch_sitemaps.py --site all
 
 # 4. Indexar al RAG (idempotente)

@@ -29,8 +29,5 @@ postgres_data/
 .idea/
 .DS_Store
 
-# Playwright
-.playwright/
-
 # Logs
 *.log

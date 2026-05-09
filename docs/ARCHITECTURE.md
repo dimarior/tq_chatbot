@@ -8,9 +8,10 @@
 ```
                          ┌──────────────────────────────────────────┐
                          │   scripts/fetch_sitemaps.py  (manual)    │
-sitemap.xml  ──httpx──►  │   - parse <loc> tags                     │
-(tqconfiable +           │   - fetch HTML (selectolax / Playwright) │  ──► data/raw/<sha1>.json
- tqfarma)                │   - retry con tenacity                   │       {url, text, hash}
+sitemap.xml  ──webclaw─► │   - parse <loc> + canonicalize host      │
+(tqconfiable +           │   - 1 subprocess `webclaw` por URL       │  ──► data/raw/<sha1>.json
+ tqfarma)                │     dentro de ThreadPoolExecutor         │       {url, text(md), hash}
+                         │   - escribe disco al completar cada URL  │
                          │   - skip si content_hash sin cambios     │
                          └──────────────────────────────────────────┘
 
@@ -52,11 +53,22 @@ data/raw/*.json     ──►  │   scripts/ingest_to_rag.py   (manual)    │ 
 **Razón.** Una sola base de datos para metadata + vectores. HNSW es el ANN estándar moderno con buen recall a baja latencia. Maduro, dockerizado vía imagen oficial `pgvector/pgvector:pg16`, y permite `JOIN`s normales para citar fuentes.
 **Rechazado.** Qdrant/Weaviate (servicio extra), Chroma (menos maduro), FAISS local (sin durabilidad).
 
-## ADR-5 — Scraping: httpx + selectolax + Playwright (fallback) + tenacity
+## ADR-5 — Scraping: webclaw CLI + ThreadPoolExecutor
 
-**Decisión.** Pipeline en dos niveles — primero httpx async + selectolax para HTML estático; si la extracción es pobre o la página marca señales de SPA (`__NEXT_DATA__`, `data-reactroot`, contenido < 200 caracteres), fallback a Playwright headless. Reintentos con `tenacity` (3 intentos, exp backoff).
-**Razón.** `httpx` es async-nativo; `selectolax` es 5–10× más rápido que BeautifulSoup en parsing. Playwright >> Selenium en estabilidad y velocidad para JS-rendered. `tenacity` da retry declarativo.
-**Rechazado.** Selenium (lento, frágil), requests (sync), Scrapy (overkill para 2 sitemaps).
+**Decisión.** `fetch_sitemaps.py` requiere el binario [`webclaw`](https://github.com/0xMassi/webclaw) instalado localmente (`brew install 0xMassi/webclaw/webclaw`). El script lo invoca dos veces:
+
+1. `webclaw <sitemap_url> --raw-html` para descargar el sitemap.xml. (httpx queda bloqueado a nivel TLS por el WAF de tqconfiable; webclaw usa `wreq`+BoringSSL con perfil de Chrome y pasa.)
+2. Por cada URL listada, un subprocess `webclaw <url> --format json --browser chrome --timeout 30` dentro de un `ThreadPoolExecutor(max_workers=--concurrency)`. Cada worker escribe `data/raw/<sha1>.json` apenas termina su URL, así el progreso es visible en tiempo real y los datos se preservan incluso si el run se interrumpe.
+
+**Razón.** Tres ventajas concretas sobre las alternativas:
+- **Sin browser headless**: webclaw extrae Readability + data-island (`__NEXT_DATA__`, Contentful) en HTML estático. ~10× más rápido que Playwright.
+- **TLS fingerprinting**: pasa los WAFs anti-bot que rechazan a httpx en el handshake.
+- **Streaming real**: el bucle de Python mete cada URL en el pool y cada worker escribe a disco al instante. Ver `data/raw/` poblándose en vivo da observabilidad y resiliencia.
+
+**Rechazado.**
+- **Webclaw en docker (`ghcr.io/0xmassi/webclaw`) en modo batch (`--urls-file`)**: probado y descartado. Webclaw acumula resultados en memoria y no escribe `--output-dir` hasta que termina el batch entero — con 1797 URLs eso son 20+ minutos sin progreso visible y un punto de falla único. Llamar el binario una vez por URL en threads da progreso real al costo de ~50 ms × N de overhead, aceptable.
+- **Mantener Playwright/selectolax**: lento, frágil, ~400 MB de browser por máquina.
+- **Scrapy/Selenium**: overkill o peor.
 
 ## ADR-6 — Chunking: RecursiveCharacterTextSplitter (~600 / 100)
 
@@ -103,6 +115,6 @@ data/raw/*.json     ──►  │   scripts/ingest_to_rag.py   (manual)    │ 
 | Riesgo | Mitigación |
 |---|---|
 | Tag `qwen3-embedding:0.6b` no existe en Ollama upstream | Fallback configurable: `EMBED_BACKEND=sentence-transformers` usa el modelo HF directo. |
-| Playwright pesa ~400 MB en imagen Docker | Sólo se requiere para el script de fetch — no se incluye en `Dockerfile.api`. Se ejecuta en host. |
+| El usuario debe tener `webclaw` instalado | El script verifica `which webclaw` al inicio y aborta con instrucciones de `brew install` si falta. Una sola instalación por máquina dev (~30 MB). |
 | M1 Pro de 8 GB no aguanta Qwen3-8B | README documenta swap a `LLM_MODEL=qwen3:4b` (~3 GB). |
 | Tailwind Play CDN tiene latencia de primer paint | Aceptable para v1 demo; ruta de upgrade documentada (build de CSS local). |
