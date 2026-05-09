@@ -19,26 +19,32 @@ class Embedder(Protocol):
     async def aclose(self) -> None: ...
 
 
+_EMBED_BATCH_SIZE = 64
+
+
 class OllamaEmbedder:
-    def __init__(self, host: str, model: str) -> None:
-        self._client = httpx.AsyncClient(base_url=host, timeout=60.0)
+    def __init__(self, host: str, model: str, timeout: int = 120) -> None:
+        # Match ollama_client.py's structured timeout: short connect for fast
+        # failure when Ollama is down; long read for slow batch embeddings.
+        self._client = httpx.AsyncClient(
+            base_url=host,
+            timeout=httpx.Timeout(connect=10.0, read=float(timeout), write=30.0, pool=10.0),
+        )
         self._model = model
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
-    async def _embed_one(self, text: str) -> list[float]:
+    async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         r = await self._client.post(
-            "/api/embeddings",
-            json={"model": self._model, "prompt": text},
+            "/api/embed",
+            json={"model": self._model, "input": texts},
         )
         r.raise_for_status()
-        return r.json()["embedding"]
+        return r.json()["embeddings"]
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        # Ollama's /api/embeddings is single-input; loop sequentially.
-        # For batched throughput, switch to /api/embed (newer, batch-capable).
         out: list[list[float]] = []
-        for t in texts:
-            out.append(await self._embed_one(t))
+        for i in range(0, len(texts), _EMBED_BATCH_SIZE):
+            out.extend(await self._embed_batch(texts[i : i + _EMBED_BATCH_SIZE]))
         return out
 
     async def aclose(self) -> None:
@@ -63,7 +69,7 @@ class SentenceTransformersEmbedder:
 def build_embedder(settings: Settings) -> Embedder:
     backend = settings.embed_backend.lower()
     if backend == "ollama":
-        return OllamaEmbedder(settings.ollama_host, settings.embed_model)
+        return OllamaEmbedder(settings.ollama_host, settings.embed_model, settings.embed_timeout)
     if backend == "sentence-transformers":
         return SentenceTransformersEmbedder(settings.embed_model)
     raise ValueError(f"Unknown EMBED_BACKEND: {settings.embed_backend}")

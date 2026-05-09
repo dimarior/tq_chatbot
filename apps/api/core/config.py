@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     embed_backend: str = "ollama"
     embed_model: str = "qwen3-embedding:0.6b"
     embed_dims: int = 1024
+    embed_timeout: int = 120
 
     database_url: str = "postgresql://tq:tq@localhost:5432/tq"
 
@@ -23,9 +24,6 @@ class Settings(BaseSettings):
     chunk_size: int = 600
     chunk_overlap: int = 100
     max_context_chars: int = 6000
-
-    scrape_concurrency: int = 8
-    scrape_timeout_s: int = 20
 
     @property
     def cors_origins_list(self) -> list[str]:
