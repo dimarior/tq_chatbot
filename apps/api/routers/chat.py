@@ -33,13 +33,16 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
     async def gen() -> AsyncIterator[str]:
         try:
             chunks = await retrieve(pool, embedder, payload.question, k=settings.top_k)
+            # Filtra ruido semántico: chunks por debajo del umbral rara vez
+            # aportan a la respuesta y ensucian los chips de fuentes del widget.
+            relevant = [c for c in chunks if c.score >= settings.min_score]
             sources = [
                 Source(url=c.url, title=c.title, score=c.score).model_dump()
-                for c in chunks
+                for c in relevant
             ]
             yield _sse(json.dumps(sources, ensure_ascii=False), event="sources")
 
-            user_prompt = build_user_prompt(payload.question, chunks, settings.max_context_chars)
+            user_prompt = build_user_prompt(payload.question, relevant, settings.max_context_chars)
             history = [m.model_dump() for m in payload.history]
 
             async for token in ollama.stream_chat(SYSTEM_PROMPT, user_prompt, history=history):

@@ -38,6 +38,10 @@ class OllamaClient:
             "model": self._model,
             "messages": messages,
             "stream": True,
+            # Qwen3 es thinking-model: sin esto emite cientos de tokens internos
+            # en `message.thinking` y deja `message.content` vacío, rompiendo el
+            # streaming hacia el cliente.
+            "think": False,
             "options": {"temperature": 0.2, "num_ctx": 8192},
         }
 
