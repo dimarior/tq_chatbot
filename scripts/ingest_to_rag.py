@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,12 +39,41 @@ def _vector_literal(vec: list[float]) -> str:
     return "[" + ",".join(f"{x:.7f}" for x in vec) + "]"
 
 
+# La limpieza fuerte ocurre en fetch_sitemaps.py (webclaw --include /
+# --only-main-content). Aquí solo defendemos contra: (1) chunks demasiado
+# cortos para aportar contexto y (2) chunks idénticos entre documentos
+# (footers o separadores que cualquier extractor deja pasar).
+_IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_LINK_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
+_WS_RE = re.compile(r"\s+")
+
+
+def _chunk_quality_ok(chunk: str) -> bool:
+    s = chunk.strip()
+    if len(s) < 80:
+        return False
+    # Quita imágenes y links anidados/simples; si queda menos de 80 chars de
+    # texto plano, el chunk es markdown sin sustancia.
+    plain = chunk
+    for _ in range(3):
+        plain = _IMG_RE.sub("", plain)
+        plain = _LINK_RE.sub("", plain)
+    if len(_WS_RE.sub(" ", plain).strip()) < 80:
+        return False
+    return True
+
+
+def _chunk_hash(chunk: str) -> str:
+    return hashlib.sha256(_WS_RE.sub(" ", chunk.strip().lower()).encode()).hexdigest()
+
+
 async def _ingest_one(
     conn: asyncpg.Connection,
     embedder,
     splitter: RecursiveCharacterTextSplitter,
     doc: dict,
     dry_run: bool,
+    seen_hashes: set[str],
 ) -> tuple[str, int]:
     url = doc["url"]
     existing_hash = await conn.fetchval("SELECT content_hash FROM documents WHERE url=$1", url)
@@ -54,11 +85,22 @@ async def _ingest_one(
         kind = "would-update" if existing_hash else "would-insert"
         return (kind, 0)
 
-    chunks = splitter.split_text(doc["text"])
-    if not chunks:
+    raw_chunks = splitter.split_text(doc["text"])
+    # Filtra basura y deduplica contra todo lo visto en la corrida.
+    unique_chunks: list[str] = []
+    for txt in raw_chunks:
+        if not _chunk_quality_ok(txt):
+            continue
+        h = _chunk_hash(txt)
+        if h in seen_hashes:
+            continue
+        seen_hashes.add(h)
+        unique_chunks.append(txt)
+
+    if not unique_chunks:
         return ("empty", 0)
 
-    embeddings = await embedder.embed(chunks)
+    embeddings = await embedder.embed(unique_chunks)
 
     async with conn.transaction():
         doc_id = await conn.fetchval(
@@ -82,8 +124,7 @@ async def _ingest_one(
         )
         await conn.execute("DELETE FROM chunks WHERE document_id=$1", doc_id)
 
-        # Build rows; embeddings serialized as pgvector text literals.
-        for i, (txt, vec) in enumerate(zip(chunks, embeddings)):
+        for i, (txt, vec) in enumerate(zip(unique_chunks, embeddings)):
             await conn.execute(
                 """
                 INSERT INTO chunks (document_id, chunk_index, content, embedding, metadata)
@@ -96,7 +137,7 @@ async def _ingest_one(
                 json.dumps({"source": doc["source"]}),
             )
 
-    return (("updated" if existing_hash else "inserted"), len(chunks))
+    return (("updated" if existing_hash else "inserted"), len(unique_chunks))
 
 
 async def main_async(args: argparse.Namespace) -> int:
@@ -120,13 +161,25 @@ async def main_async(args: argparse.Namespace) -> int:
         counts = {"unchanged": 0, "inserted": 0, "updated": 0, "empty": 0,
                   "would-insert": 0, "would-update": 0}
         total_chunks = 0
+        # Hashes vistos en esta corrida; evita reembedir/insertar el mismo chunk
+        # en docs distintos (boilerplate del template, "Lo más leído", etc.).
+        seen_hashes: set[str] = set()
+        # Pre-carga hashes ya en BD para que reingestas incrementales no rompan
+        # idempotencia con la versión limpia.
+        if not args.dry_run:
+            rows = await conn.fetch("SELECT content FROM chunks")
+            for r in rows:
+                seen_hashes.add(_chunk_hash(r["content"]))
+            if seen_hashes:
+                LOG.info("preloaded %d existing chunk hashes for dedupe", len(seen_hashes))
+
         for fp in files:
             try:
                 doc = json.loads(fp.read_text("utf-8"))
             except Exception as e:
                 LOG.error("skip %s: %s", fp.name, e)
                 continue
-            kind, n = await _ingest_one(conn, embedder, splitter, doc, args.dry_run)
+            kind, n = await _ingest_one(conn, embedder, splitter, doc, args.dry_run, seen_hashes)
             counts[kind] = counts.get(kind, 0) + 1
             total_chunks += n
             LOG.info("%-13s %s (%d chunks)", kind, doc["url"], n)

@@ -22,6 +22,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,46 @@ WEBCLAW_TIMEOUT = int(os.environ.get("WEBCLAW_TIMEOUT", "30"))
 SITEMAPS = {
     "tqconfiable": "https://www.tqconfiable.com/sitemap.xml",
     "tqfarma": "https://www.tqfarma.com/sitemap.xml",
+}
+
+# Flags de webclaw por sitio para extraer SOLO el contenido útil. Sin esto,
+# el markdown trae header, sidebar, menús, "Lo más leído", "Regístrese al
+# portal", etc — el mismo boilerplate aparece en cientos de docs y rompe el
+# RAG (embeddings casi idénticos). --only-main-content selecciona el bloque
+# principal (article/main heurístico) y descarta chrome del sitio.
+EXTRACTION_FLAGS = {
+    "tqfarma": ("--only-main-content",),
+    "tqconfiable": ("--only-main-content",),
+}
+
+# tqfarma exige login de profesional de la salud para 1700+ URLs del sitemap;
+# los productos redirigen a /Account/Login. Solo unas pocas URLs son realmente
+# públicas con contenido sustantivo. Cuando un sitio aparece aquí, se ignora
+# el sitemap y se usa esta lista explícita.
+PUBLIC_URL_OVERRIDES: dict[str, list[str]] = {
+    "tqfarma": [
+        "https://www.tqfarma.com/",
+        "https://www.tqfarma.com/quienes-somos",
+        "https://www.tqfarma.com/contactenos",
+        "https://www.tqfarma.com/vademecum/",
+        "https://www.tqfarma.com/medicamentos-a-z",
+        "https://www.tqfarma.com/biblioteca-cientifica",
+        "https://www.tqfarma.com/biblioteca-cientifica/cursos-online/",
+        "https://www.tqfarma.com/biblioteca-cientifica/noticias-actualidad/",
+    ],
+}
+
+# Páginas índice cuyos enlaces internos directos también son públicos. Para cada
+# (index_url, regex), el script descarga el HTML y añade al override las rutas
+# que matchean. Solo páginas listado (un nivel), no los artículos individuales
+# detrás de "ver más" — esos en su mayoría son gated.
+PUBLIC_URL_DISCOVERY: dict[str, list[tuple[str, re.Pattern[str]]]] = {
+    "tqfarma": [
+        (
+            "https://www.tqfarma.com/biblioteca-cientifica/noticias-actualidad/",
+            re.compile(r'href="(/biblioteca-cientifica/noticias-actualidad/[a-z0-9-]+/?)"'),
+        ),
+    ],
 }
 
 # tqconfiable's sitemap lists http://www.tqconfiable.com/* URLs but the server
@@ -107,8 +148,9 @@ def _webclaw_run(url: str, *extra: str) -> bytes:
     return proc.stdout
 
 
-def _webclaw_extract(url: str) -> dict:
-    return json.loads(_webclaw_run(url, "--format", "json", "--browser", "chrome"))
+def _webclaw_extract(url: str, source: str) -> dict:
+    extra = EXTRACTION_FLAGS.get(source, ())
+    return json.loads(_webclaw_run(url, "--format", "json", "--browser", "chrome", *extra))
 
 
 def _webclaw_raw(url: str) -> bytes:
@@ -140,6 +182,32 @@ def _read_failed_urls() -> dict[str, list[str]]:
     return grouped
 
 
+def _discover_extras(source: str) -> list[str]:
+    """Expand each (index, regex) pair into the canonical child URLs it links to.
+
+    Used for sites in PUBLIC_URL_OVERRIDES that also have index pages (e.g.
+    /biblioteca-cientifica/noticias-actualidad/) where the list of public
+    children grows over time and we don't want to hardcode every specialty.
+    """
+    rules = PUBLIC_URL_DISCOVERY.get(source, [])
+    discovered: list[str] = []
+    seen: set[str] = set()
+    for index_url, pattern in rules:
+        try:
+            html = _webclaw_raw(index_url).decode("utf-8", "replace")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            LOG.warning("discovery failed for %s: %s", index_url, e)
+            continue
+        base = urlsplit(index_url)
+        origin = f"{base.scheme}://{base.netloc}"
+        for path in pattern.findall(html):
+            full = _canonicalize(origin + path)
+            if full not in seen:
+                seen.add(full)
+                discovered.append(full)
+    return discovered
+
+
 def _parse_sitemap(sitemap_url: str) -> list[str]:
     raw = _webclaw_raw(sitemap_url)
     root = ET.fromstring(raw)
@@ -159,7 +227,7 @@ def _process_one(url: str, source: str, force: bool) -> FetchResult:
     out_path = RAW_DIR / f"{_slug(url)}.json"
 
     try:
-        wc = _webclaw_extract(url)
+        wc = _webclaw_extract(url, source)
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or b"").decode("utf-8", "replace").strip().splitlines()
         msg = stderr[-1] if stderr else f"exit {e.returncode}"
@@ -176,6 +244,13 @@ def _process_one(url: str, source: str, force: bool) -> FetchResult:
     text = (content.get("markdown") or "").strip()
     if len(text) < 50:
         return FetchResult(url, source, "failed", f"empty content (len={len(text)})")
+
+    # tqfarma redirige URLs gated a /Account/Login?regresar=... — webclaw
+    # entrega el HTML del login en vez del contenido pedido. Detectarlo aquí
+    # evita meter formularios de login en el RAG aunque la allowlist falle.
+    final_url = (metadata.get("url") or "").lower()
+    if "/account/login" in final_url:
+        return FetchResult(url, source, "failed", "login wall")
 
     content_hash = _hash(text)
     title = metadata.get("title")
@@ -262,12 +337,27 @@ def main() -> int:
     else:
         sites = list(SITEMAPS.items()) if args.site == "all" else [(args.site, SITEMAPS[args.site])]
         for source, sm_url in sites:
-            try:
-                urls = _parse_sitemap(sm_url)
-            except Exception as e:
-                LOG.error("sitemap parse failed for %s: %s", source, e)
-                continue
-            LOG.info("sitemap %s -> %d urls", source, len(urls))
+            override = PUBLIC_URL_OVERRIDES.get(source)
+            if override:
+                urls = list(override)
+                extras = _discover_extras(source)
+                # dedupe preserving order: explicit overrides first, then discovered
+                seen: set[str] = set(urls)
+                for u in extras:
+                    if u not in seen:
+                        urls.append(u)
+                        seen.add(u)
+                LOG.info(
+                    "override %s -> %d public urls (%d explicit + %d discovered, sitemap skipped)",
+                    source, len(urls), len(override), len(urls) - len(override),
+                )
+            else:
+                try:
+                    urls = _parse_sitemap(sm_url)
+                except Exception as e:
+                    LOG.error("sitemap parse failed for %s: %s", source, e)
+                    continue
+                LOG.info("sitemap %s -> %d urls", source, len(urls))
             if args.limit > 0:
                 urls = urls[: args.limit]
                 LOG.info("limit=%d: processing first %d urls for %s", args.limit, len(urls), source)
