@@ -3,11 +3,27 @@
 @tailwind utilities;
 
 html,
-body,
-#__next {
+body {
   height: 100%;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-canvas text-ink antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Scrollbar tuning: ChatGPT uses a thin neutral scrollbar that fades into the panel. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.12);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }

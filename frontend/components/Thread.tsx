@@ -7,29 +7,47 @@ import { AssistantMessage, UserMessage } from "./Messages";
 
 export function Thread() {
   return (
-    <ThreadPrimitive.Root className="flex h-full flex-col">
-      <ThreadPrimitive.Viewport className="flex-1 space-y-3 overflow-y-auto bg-slate-50 px-4 py-4">
+    <ThreadPrimitive.Root className="flex h-full flex-col bg-canvas">
+      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
         <ThreadPrimitive.Empty>
-          <div className="flex h-full items-center justify-center">
-            <div className="max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-              <p className="text-sm font-semibold text-slate-900">TQ-Asistente</p>
-              <p className="mt-2 text-sm text-slate-600">
-                Pregunta sobre Tecnoquímicas S.A. y tqfarma. Las respuestas
-                citan fuentes oficiales.
-              </p>
-            </div>
-          </div>
+          <EmptyState />
         </ThreadPrimitive.Empty>
 
-        <ThreadPrimitive.Messages
-          components={{
-            UserMessage,
-            AssistantMessage,
-          }}
-        />
+        <div className="mx-auto w-full max-w-3xl px-4 py-6">
+          <div className="space-y-6">
+            <ThreadPrimitive.Messages
+              components={{ UserMessage, AssistantMessage }}
+            />
+          </div>
+        </div>
       </ThreadPrimitive.Viewport>
 
-      <Composer />
+      <div className="border-t border-line/60 bg-canvas">
+        <div className="mx-auto w-full max-w-3xl px-4 py-4">
+          <Composer />
+          <p className="mt-2 text-center text-[11px] text-ink-subtle">
+            TQ-Asistente puede equivocarse. Verifica información clínica en
+            fuentes oficiales.
+          </p>
+        </div>
+      </div>
     </ThreadPrimitive.Root>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex h-full min-h-[60vh] flex-col items-center justify-center px-4">
+      <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-ink text-canvas">
+        <span className="text-base font-semibold">TQ</span>
+      </div>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">
+        ¿En qué puedo ayudarte hoy?
+      </h1>
+      <p className="mt-2 max-w-md text-center text-sm text-ink-muted">
+        Pregunta sobre Tecnoquímicas S.A. y tqfarma. Las respuestas citan
+        fuentes oficiales.
+      </p>
+    </div>
   );
 }

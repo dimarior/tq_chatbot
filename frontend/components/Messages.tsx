@@ -8,7 +8,7 @@ import { SourcesFooter } from "./SourcesFooter";
 
 function MarkdownText({ text }: { text: string }) {
   return (
-    <div className="prose prose-sm max-w-none break-words">
+    <div className="prose prose-sm max-w-none break-words text-[15px] leading-7 text-ink prose-p:my-2 prose-pre:my-2 prose-headings:font-semibold">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || ""}</ReactMarkdown>
     </div>
   );
@@ -18,21 +18,27 @@ const textComponents = {
   Text: ({ text }: { text: string }) => <MarkdownText text={text} />,
 };
 
+// User: soft grey rounded bubble, right-aligned, max ~70% width — matches ChatGPT.
 export function UserMessage() {
   return (
     <MessagePrimitive.Root className="flex justify-end">
-      <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-brand px-3 py-2 text-sm text-white shadow-sm">
+      <div className="max-w-[75%] rounded-3xl bg-bubble px-4 py-2.5 text-[15px] leading-6 text-ink">
         <MessagePrimitive.Content components={textComponents} />
       </div>
     </MessagePrimitive.Root>
   );
 }
 
+// Assistant: NO bubble, plain text on canvas with a small avatar gutter on the
+// left. Sources chips render under the answer.
 export function AssistantMessage() {
   const message = useMessage() as { id?: string } | undefined;
   return (
-    <MessagePrimitive.Root className="flex justify-start">
-      <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
+    <MessagePrimitive.Root className="flex gap-3">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-canvas">
+        TQ
+      </div>
+      <div className="min-w-0 flex-1">
         <MessagePrimitive.Content components={textComponents} />
         <SourcesFooter messageId={message?.id} />
       </div>
