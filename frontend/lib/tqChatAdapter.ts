@@ -68,14 +68,15 @@ export const tqChatAdapter: ChatModelAdapter = {
       } else if (frame.event === "done") {
         break;
       } else if (frame.event === "error") {
-        let detail = "Hubo un problema al procesar tu pregunta.";
+        let msg = "Hubo un problema al procesar tu pregunta.";
         try {
-          const obj = JSON.parse(frame.data) as { error?: string };
-          if (obj.error) detail = obj.error;
+          const obj = JSON.parse(frame.data) as { error?: string; detail?: string };
+          if (obj.error) msg = obj.error;
+          if (obj.detail) msg = `${msg} (${obj.detail})`;
         } catch {
           /* noop */
         }
-        throw new Error(detail);
+        throw new Error(msg);
       }
     }
   },

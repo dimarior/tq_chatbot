@@ -9,8 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.11.0",
-    "assistant-stream": "^0.2.0",
+    "@assistant-ui/react": "^0.12.28",
+    "assistant-stream": "^0.3.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

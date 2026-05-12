@@ -4,8 +4,8 @@ import {
   ExportedMessageRepository,
   RuntimeAdapterProvider,
   useAssistantApi,
+  type RemoteThreadListAdapter,
   type ThreadHistoryAdapter,
-  type unstable_RemoteThreadListAdapter,
 } from "@assistant-ui/react";
 import { createAssistantStream } from "assistant-stream";
 import { useMemo } from "react";
@@ -30,16 +30,24 @@ async function patchThread(remoteId: string, body: Record<string, unknown>) {
   });
 }
 
-export const threadListAdapter: unstable_RemoteThreadListAdapter = {
+export const threadListAdapter: RemoteThreadListAdapter = {
   async list() {
-    const data = await jsonFetch<{ threads: ApiThread[] }>(apiUrl("/api/threads"));
-    return {
-      threads: data.threads.map((t) => ({
-        status: t.archived ? ("archived" as const) : ("regular" as const),
-        remoteId: t.id,
-        title: t.title,
-      })),
-    };
+    // `list()` corre al montar el RuntimeProvider; si el API está caído no
+    // tumbamos toda la UI — el chat sigue siendo usable, sólo se pierde la
+    // hidratación del sidebar.
+    try {
+      const data = await jsonFetch<{ threads: ApiThread[] }>(apiUrl("/api/threads"));
+      return {
+        threads: data.threads.map((t) => ({
+          status: t.archived ? ("archived" as const) : ("regular" as const),
+          remoteId: t.id,
+          title: t.title,
+        })),
+      };
+    } catch (e) {
+      console.warn("[threadListAdapter.list] fallo cargando hilos:", e);
+      return { threads: [] };
+    }
   },
 
   async initialize(threadId: string) {
@@ -80,19 +88,25 @@ export const threadListAdapter: unstable_RemoteThreadListAdapter = {
 
   async generateTitle(remoteId, messages) {
     return createAssistantStream(async (controller) => {
-      const wire = messages.map((m) => ({
-        role: m.role,
-        content: flattenContent(m.content),
-      }));
-      const { title } = await jsonFetch<{ title: string }>(
-        apiUrl(`/api/threads/${remoteId}/title`),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: wire }),
-        },
-      );
-      controller.appendText(title);
+      // El título es accesorio: si Ollama está caído o el endpoint falla,
+      // dejamos el título por defecto en lugar de tumbar la UI.
+      try {
+        const wire = messages.map((m) => ({
+          role: m.role,
+          content: flattenContent(m.content),
+        }));
+        const { title } = await jsonFetch<{ title: string }>(
+          apiUrl(`/api/threads/${remoteId}/title`),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: wire }),
+          },
+        );
+        controller.appendText(title);
+      } catch (e) {
+        console.warn("[threadListAdapter.generateTitle] fallo:", e);
+      }
     });
   },
 
