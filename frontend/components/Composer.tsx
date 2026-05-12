@@ -4,7 +4,7 @@ import { ComposerPrimitive } from "@assistant-ui/react";
 
 export function Composer() {
   return (
-    <ComposerPrimitive.Root className="relative flex items-end gap-2 rounded-3xl border border-line/70 bg-canvas px-4 py-3 shadow-composer focus-within:border-ink/20">
+    <ComposerPrimitive.Root className="relative flex items-end gap-2 rounded-3xl border border-line/70 bg-canvas px-4 py-3 shadow-composer focus-within:border-brand/40 focus-within:ring-2 focus-within:ring-brand/10">
       <ComposerPrimitive.Input
         rows={1}
         autoFocus
@@ -12,7 +12,7 @@ export function Composer() {
         className="max-h-48 flex-1 resize-none bg-transparent text-[15px] leading-6 text-ink placeholder:text-ink-subtle focus:outline-none"
       />
       <ComposerPrimitive.Send
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-canvas transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-subtle"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_4px_12px_rgba(50,63,167,0.25)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:bg-line disabled:bg-none disabled:text-ink-subtle disabled:shadow-none"
         aria-label="Enviar"
       >
         <ArrowUpIcon />

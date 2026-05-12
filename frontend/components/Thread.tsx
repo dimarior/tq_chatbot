@@ -38,8 +38,8 @@ export function Thread() {
 function EmptyState() {
   return (
     <div className="flex h-full min-h-[60vh] flex-col items-center justify-center px-4">
-      <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-ink text-canvas">
-        <span className="text-base font-semibold">TQ</span>
+      <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_8px_24px_rgba(50,63,167,0.25)]">
+        <span className="text-base font-semibold tracking-tight">TQ</span>
       </div>
       <h1 className="text-2xl font-semibold tracking-tight text-ink">
         ¿En qué puedo ayudarte hoy?

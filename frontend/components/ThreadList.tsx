@@ -8,7 +8,10 @@ import {
 export function ThreadList() {
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-3 py-3">
+      <div className="flex items-center gap-2 px-3 py-3">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-semibold text-white shadow-[0_2px_6px_rgba(50,63,167,0.2)]">
+          TQ
+        </div>
         <span className="text-sm font-semibold tracking-tight text-ink">
           TQ-Asistente
         </span>
@@ -37,12 +40,12 @@ export function ThreadList() {
 
 function ThreadListItem() {
   return (
-    <ThreadListItemPrimitive.Root className="group relative flex items-center rounded-lg text-sm text-ink hover:bg-panelHover data-[active]:bg-panelActive">
+    <ThreadListItemPrimitive.Root className="group relative flex items-center rounded-lg text-sm text-ink hover:bg-panelHover data-[active]:bg-panelActive data-[active]:text-brand">
       <ThreadListItemPrimitive.Trigger className="flex flex-1 items-center gap-2 truncate px-3 py-2 text-left">
         <ThreadListItemPrimitive.Title fallback="Nueva conversación" />
       </ThreadListItemPrimitive.Trigger>
       <ThreadListItemPrimitive.Archive
-        className="invisible mr-1 rounded-md p-1.5 text-ink-muted hover:bg-panelActive hover:text-ink group-hover:visible"
+        className="invisible mr-1 rounded-md p-1.5 text-ink-muted hover:bg-panelActive hover:text-brand group-hover:visible"
         aria-label="Archivar"
       >
         <TrashIcon />

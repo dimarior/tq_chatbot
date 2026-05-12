@@ -17,7 +17,7 @@ export function SourcesFooter({ messageId }: { messageId: string | undefined }) 
           href={s.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex max-w-[14rem] items-center gap-1 truncate rounded-full border border-line bg-panel px-2.5 py-0.5 text-[12px] text-ink-muted transition hover:bg-panelHover hover:text-ink"
+          className="inline-flex max-w-[14rem] items-center gap-1 truncate rounded-full border border-line bg-panel px-2.5 py-0.5 text-[12px] text-ink-muted transition hover:border-brand/30 hover:bg-panelHover hover:text-brand"
           title={s.url}
         >
           <LinkIcon />

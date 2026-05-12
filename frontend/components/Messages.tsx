@@ -35,7 +35,7 @@ export function AssistantMessage() {
   const message = useMessage() as { id?: string } | undefined;
   return (
     <MessagePrimitive.Root className="flex gap-3">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-canvas">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-semibold text-white">
         TQ
       </div>
       <div className="min-w-0 flex-1">
