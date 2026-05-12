@@ -1,8 +1,0 @@
-[x-cloak] { display: none !important; }
-
-/* Compact prose so chat bubbles stay tight. */
-.prose p { margin: 0.25rem 0; }
-.prose ul, .prose ol { margin: 0.25rem 0; padding-left: 1.25rem; }
-.prose code { font-size: 0.85em; background: rgba(0,0,0,0.06); padding: 0.05rem 0.25rem; border-radius: 4px; }
-.prose pre { background: #0f172a; color: #f1f5f9; padding: 0.5rem; border-radius: 6px; overflow-x: auto; }
-.prose a { color: #2563eb; text-decoration: underline; }

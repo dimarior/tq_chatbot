@@ -23,8 +23,9 @@ Chatbot RAG sobre Tecnoquímicas S.A. — backend en FastAPI, modelo local Qwen3
 | Vector DB | PostgreSQL 16 + pgvector (HNSW, cosine) |
 | Scraping | [webclaw](https://github.com/0xMassi/webclaw) (Rust CLI) — `brew install` |
 | Chunking | LangChain `RecursiveCharacterTextSplitter` |
-| Frontend | HTML estático + Tailwind (Play CDN) + Alpine.js + HTMX (SSE) |
-| Streaming | SSE (Server-Sent Events) |
+| Frontend | Next.js 15 (App Router) + React 19 + [assistant-ui](https://www.assistant-ui.com/) + Tailwind 3 |
+| Streaming | SSE (Server-Sent Events) — parser custom dentro del `ChatModelAdapter` |
+| Persistencia de chat | Postgres (`conversations`, `messages`) — hilos compartidos sin auth |
 | Infra | docker-compose |
 
 Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -45,9 +46,8 @@ Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 # 1. Configurar entorno
 cp .env.example .env
 
-# 2. Levantar stack (postgres + ollama + api). Primer arranque descarga modelos (~6 GB).
+# 2. Levantar stack (postgres + api). Primer arranque crea las tablas (incluye conversations/messages).
 docker compose up -d
-docker compose logs -f ollama-init   # esperar a que termine de pullear modelos
 
 # 3. Scrapear sitios (idempotente — re-ejecutable). Requiere `webclaw` instalado.
 uv sync
@@ -56,9 +56,18 @@ uv run python scripts/fetch_sitemaps.py --site all
 # 4. Indexar al RAG (idempotente)
 uv run python scripts/ingest_to_rag.py
 
-# 5. Abrir el chat
-open http://localhost:8000
+# 5. Levantar el frontend (Next.js + assistant-ui)
+cd frontend
+cp .env.local.example .env.local        # apunta a http://localhost:8000
+pnpm install
+pnpm dev                                # http://localhost:3000
+
+# 6. Abrir el chat
+open http://localhost:3000
 ```
+
+> El API queda en `http://localhost:8000` (FastAPI, sólo `/api/*`). El frontend
+> consume `NEXT_PUBLIC_API_BASE`. CORS ya permite ambos orígenes en dev.
 
 ## Comandos útiles
 
@@ -85,12 +94,15 @@ curl http://localhost:8000/api/health
 .
 ├── apps/api/              # FastAPI app
 │   ├── core/              # config + db pool
-│   ├── routers/           # /api/chat (SSE), /api/health
+│   ├── routers/           # /api/chat (SSE), /api/health, /api/threads (persistencia)
 │   ├── rag/               # embeddings, retriever, prompt
 │   └── llm/               # Ollama client
-├── frontend/              # landing + bubble widget (servido por FastAPI)
+├── frontend/              # Next.js + assistant-ui
+│   ├── app/               # layout + page (sidebar + chat)
+│   ├── components/        # ThreadList, Thread, Composer, Messages, SourcesFooter
+│   └── lib/               # tqChatAdapter, threadListAdapter, sourcesStore, sse, api
 ├── scripts/               # fetch_sitemaps.py, ingest_to_rag.py, reset_rag.py
-├── migrations/            # 001_init.sql (auto-aplicado por postgres init)
+├── migrations/            # 001_init.sql, 002_conversations.sql (auto-aplicados)
 ├── data/                  # raw + processed (gitignored)
 ├── docs/ARCHITECTURE.md   # decisiones (ADRs)
 ├── docker-compose.yml

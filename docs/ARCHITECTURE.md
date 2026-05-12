@@ -100,12 +100,17 @@ data/raw/*.json     ──►  │   scripts/ingest_to_rag.py   (manual)    │ 
 **Razón.** Un solo comando `docker compose up` levanta el stack completo. Volúmenes persistentes para datos de Postgres y modelos de Ollama. Reproducible en cualquier máquina con Docker Desktop.
 **Rechazado.** Kubernetes (overkill), instalación nativa (no reproducible), múltiples docker-compose (fragmentación innecesaria).
 
+## ADR-11 — Frontend Next.js + assistant-ui, persistencia de hilos en Postgres
+
+**Decisión.** Reemplazar el widget Alpine.js por un app Next.js 15 (App Router) que usa [assistant-ui](https://www.assistant-ui.com/) como conjunto de primitivos de chat. El frontend corre en su propio puerto (3000); FastAPI se queda sólo con `/api/*`. Persistencia de hilos en Postgres mediante dos tablas nuevas (`conversations`, `messages`) — sin auth, lista de hilos compartida.
+**Razón.** El widget Alpine no escala a flujos con historial, sidebar, regeneración o edición de turnos. assistant-ui provee esos primitivos contra un `ChatModelAdapter` y un `RemoteThreadListAdapter` documentados, lo que nos deja conservar el contrato SSE existente (`sources` / `token` / `done` / `error`) y enchufar nuestro propio backend de persistencia. El `ChatModelAdapter` parsea el SSE manualmente; `/api/chat` queda single-shot y stateless — quien persiste son los endpoints `/api/threads/*` que el `ThreadHistoryAdapter` llama por separado. Las citas (`sources`) se almacenan en una columna JSONB sobre `messages` y se re-hidratan en un `Zustand` store keyed por `messageId`, evitando contaminar el stream de contenido del modelo.
+**Rechazado.** Mantener el widget (techo bajo); reemplazar el contrato SSE por el data-stream protocol de Vercel (rompe `curl` y desperdicia trabajo existente); mover la persistencia al endpoint de chat (acoplaría streaming con escritura y complicaría reintentos/cancelación).
+
 ---
 
 ## Fuera de alcance (v1)
 
 - Autenticación, multi-tenancy, rate limiting
-- Persistencia de historial de chat (estado en memoria del cliente)
 - Re-ranking (BM25 / MMR / cross-encoder)
 - Tests automatizados (smoke manual por ahora)
 - Despliegue productivo (sólo runtime local)
@@ -117,4 +122,4 @@ data/raw/*.json     ──►  │   scripts/ingest_to_rag.py   (manual)    │ 
 | Tag `qwen3-embedding:0.6b` no existe en Ollama upstream | Fallback configurable: `EMBED_BACKEND=sentence-transformers` usa el modelo HF directo. |
 | El usuario debe tener `webclaw` instalado | El script verifica `which webclaw` al inicio y aborta con instrucciones de `brew install` si falta. Una sola instalación por máquina dev (~30 MB). |
 | M1 Pro de 8 GB no aguanta Qwen3-8B | README documenta swap a `LLM_MODEL=qwen3:4b` (~3 GB). |
-| Tailwind Play CDN tiene latencia de primer paint | Aceptable para v1 demo; ruta de upgrade documentada (build de CSS local). |
+| Versión de assistant-ui cambia entre minor (export `useAui` ↔ `useAssistantApi`, nombres de primitivos) | Pin de versión en `frontend/package.json`. Si una primitiva cambia de nombre al subir minor, ajustar el adapter es la única superficie afectada (no toca backend). |

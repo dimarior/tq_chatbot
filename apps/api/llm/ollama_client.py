@@ -60,3 +60,11 @@ class OllamaClient:
                     yield token
                 if obj.get("done"):
                     break
+
+    async def complete(self, system: str, user: str) -> str:
+        """Drena stream_chat en un único string. Para tareas one-shot
+        (p.ej. generación de títulos), sin necesidad de SSE al cliente."""
+        parts: list[str] = []
+        async for token in self.stream_chat(system, user):
+            parts.append(token)
+        return "".join(parts).strip()

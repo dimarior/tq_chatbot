@@ -41,12 +41,11 @@ services:
       EMBED_MODEL: qwen3-embedding:0.6b
       EMBED_DIMS: ${EMBED_DIMS:-1024}
       TOP_K: ${TOP_K:-6}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000,http://localhost:3000}
     ports:
       - "8000:8000"
     volumes:
       - ./apps:/app/apps:ro
-      - ./frontend:/app/frontend:ro
 
 volumes:
   postgres_data:
