@@ -6,6 +6,11 @@ __pycache__/
 .venv/
 venv/
 .python-version
+node_modules/
+dist/
+build/
+.next
+.DS_Store
 
 # uv
 .uv-cache/
