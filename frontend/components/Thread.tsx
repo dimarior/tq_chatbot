@@ -1,34 +1,76 @@
 "use client";
 
 import { ThreadPrimitive, useAuiState } from "@assistant-ui/react";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 import { usePendingResponseStore } from "@/lib/pendingResponseStore";
+import { useResolvedThreadId } from "@/lib/runtimeScopeStore";
+import { useThreadHydrationStore } from "@/lib/threadHydrationStore";
 import { Composer } from "./Composer";
 import { AssistantMessage, UserMessage } from "./Messages";
 
+const UUID_RE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+const CHAT_THREAD_PATH_RE = new RegExp(`^/chat/(${UUID_RE.source})$`, "i");
+
+function parseThreadIdFromPathname(pathname: string | null): string | undefined {
+  if (!pathname) return undefined;
+  const match = CHAT_THREAD_PATH_RE.exec(pathname);
+  return match?.[1];
+}
+
 export function Thread() {
-  const isEmpty = useAuiState((s) => s.thread.isEmpty);
+  const pathname = usePathname();
+  // Resolvemos el hilo igual que MyRuntimeProvider: la intención del store
+  // manda sobre la URL, así no hay desajuste durante la navegación async.
+  const routeThreadId = useResolvedThreadId(parseThreadIdFromPathname(pathname));
   const isRunning = useAuiState((s) => s.thread.isRunning);
+  const activeRemoteId = useAuiState((s) => s.threadListItem.remoteId);
+  const hydratingThreadId = useThreadHydrationStore((s) => s.hydratingThreadId);
   const hasUserMessage = useAuiState((s) =>
     s.thread.messages.some((message) => message.role === "user"),
   );
   const hasAssistantMessage = useAuiState((s) =>
     s.thread.messages.some((message) => message.role === "assistant"),
   );
+  const isNewChat = usePendingResponseStore((s) => s.isNewChat);
   const isPendingResponse = usePendingResponseStore((s) => s.isPending);
   const clearPendingResponse = usePendingResponseStore((s) => s.clear);
 
   useEffect(() => {
-    if (hasAssistantMessage || (hasUserMessage && !isRunning)) {
+    if (isRunning || (!isNewChat && (hasAssistantMessage || hasUserMessage))) {
       clearPendingResponse();
     }
-  }, [clearPendingResponse, hasAssistantMessage, hasUserMessage, isRunning]);
+  }, [
+    clearPendingResponse,
+    hasAssistantMessage,
+    hasUserMessage,
+    isNewChat,
+    isRunning,
+  ]);
+
+  // El historial está cargando si el adapter marcó este hilo como hidratando,
+  // o si el runtime aún no ha conmutado su remoteId al hilo de la URL (la
+  // ventana previa a que load() arranque). `s.thread.isEmpty` NO sirve aquí:
+  // el runtime reporta el hilo recién conmutado como no-vacío antes de que el
+  // fetch termine.
+  const isHydratingPersistedThread =
+    !isNewChat &&
+    !!routeThreadId &&
+    !isRunning &&
+    (hydratingThreadId === routeThreadId || activeRemoteId !== routeThreadId);
+  const showWelcomeState =
+    !routeThreadId &&
+    !isRunning &&
+    (isNewChat || (!isPendingResponse && !hasUserMessage && !hasAssistantMessage));
 
   return (
     <ThreadPrimitive.Root className="flex h-full flex-col bg-canvas">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
-        {isEmpty && !isRunning && !isPendingResponse ? (
+        {isHydratingPersistedThread ? (
+          <LoadingThreadState />
+        ) : showWelcomeState ? (
           <ThreadPrimitive.Empty>
             <EmptyState />
           </ThreadPrimitive.Empty>
@@ -56,6 +98,21 @@ export function Thread() {
         </div>
       </div>
     </ThreadPrimitive.Root>
+  );
+}
+
+function LoadingThreadState() {
+  return (
+    <div
+      className="flex h-full min-h-[60vh] flex-col items-center justify-center px-4"
+      aria-live="polite"
+      data-testid="thread-loading-state"
+    >
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_8px_24px_rgba(50,63,167,0.25)]">
+        <span className="text-sm font-semibold tracking-tight">TQ</span>
+      </div>
+      <p className="text-sm font-medium text-ink">Cargando conversación...</p>
+    </div>
   );
 }
 

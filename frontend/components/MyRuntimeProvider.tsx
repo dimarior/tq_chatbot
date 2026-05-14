@@ -11,8 +11,18 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo } from "react";
 
+import { usePendingResponseStore } from "@/lib/pendingResponseStore";
+import {
+  resetRuntimeScopeTarget,
+  useResolvedThreadId,
+  useRuntimeScopeStore,
+} from "@/lib/runtimeScopeStore";
 import { useThreadHistoryAdapter } from "@/lib/threadHistoryAdapter";
-import { setReloadThreads, threadListAdapter } from "@/lib/threadListAdapter";
+import {
+  setReloadThreads,
+  setRouteRemoteThreadId,
+  threadListAdapter,
+} from "@/lib/threadListAdapter";
 import { tqChatAdapter } from "@/lib/tqChatAdapter";
 
 const UUID_RE =
@@ -33,15 +43,26 @@ function ThreadRouteSync() {
   const router = useRouter();
   const pathname = usePathname();
   const remoteId = useAuiState((s) => s.threadListItem.remoteId);
-  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const isNewChat = usePendingResponseStore((s) => s.isNewChat);
 
   useEffect(() => {
+    // Mientras "Nueva conversación" está activa, el runtime todavía puede
+    // arrastrar el remoteId del hilo anterior por un render. Sincronizar la URL
+    // en esa ventana nos devolvería al chat viejo, así que esperamos a que el
+    // usuario envíe el primer mensaje (begin() limpia isNewChat).
+    if (isNewChat) return;
+    // Único trabajo de este efecto: promover /chat -> /chat/{id} la primera vez
+    // que un chat nuevo crea su hilo remoto. Si la URL YA tiene un id, esa es la
+    // fuente de verdad — el runtime se sincroniza por el prop `threadId` de
+    // <RuntimeScope>. Reescribir la URL aquí mientras useRemoteThreadListRuntime
+    // cambia de hilo de forma asíncrona crea un bucle infinito: el remoteId va
+    // por detrás de la URL, lo reescribimos al hilo viejo, el runtime termina de
+    // cambiar, lo reescribimos al nuevo, y así sin fin.
+    if (pathname !== "/chat") return;
     if (remoteId) {
-      const target = threadPath(remoteId);
-      if (pathname === "/chat" && isRunning) return;
-      if (pathname !== target) router.replace(target);
+      router.replace(threadPath(remoteId));
     }
-  }, [isRunning, pathname, remoteId, router]);
+  }, [isNewChat, pathname, remoteId, router]);
 
   return null;
 }
@@ -57,14 +78,14 @@ function ThreadListReloadBridge() {
   return null;
 }
 
-export function MyRuntimeProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const threadId = useMemo(
-    () => parseThreadIdFromPathname(pathname),
-    [pathname],
-  );
+function RuntimeScope({
+  children,
+  threadId,
+}: {
+  children: ReactNode;
+  threadId: string | undefined;
+}) {
   const history = useThreadHistoryAdapter(threadId);
-
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: () =>
       useLocalRuntime(tqChatAdapter, {
@@ -80,5 +101,47 @@ export function MyRuntimeProvider({ children }: { children: ReactNode }) {
       <ThreadRouteSync />
       {children}
     </AssistantRuntimeProvider>
+  );
+}
+
+export function MyRuntimeProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const scopeEpoch = useRuntimeScopeStore((s) => s.epoch);
+  const scopeTarget = useRuntimeScopeStore((s) => s.target);
+  const pathThreadId = useMemo(
+    () => parseThreadIdFromPathname(pathname),
+    [pathname],
+  );
+  const threadId = useResolvedThreadId(pathThreadId);
+
+  useEffect(() => {
+    setRouteRemoteThreadId(threadId ?? null);
+    return () => setRouteRemoteThreadId(null);
+  }, [threadId]);
+
+  useEffect(() => {
+    // Cuando la URL ya alcanzó el target, el intent se consumió: lo limpiamos
+    // (sin tocar el epoch) para que abrir un hilo con router.push funcione por
+    // el cambio del prop threadId, no por un remonte.
+    if (scopeTarget === undefined) return;
+    const settled =
+      scopeTarget === null
+        ? pathThreadId === undefined
+        : scopeTarget === pathThreadId;
+    if (settled) resetRuntimeScopeTarget();
+  }, [pathThreadId, scopeTarget]);
+
+  if (pathname === null) {
+    return null;
+  }
+
+  // La key es el epoch del runtime scope, NO el pathname. Solo remontamos en
+  // navegaciones iniciadas por el usuario (que llaman a openRuntimeScope). La
+  // navegación automática /chat -> /chat/{id} tras el primer mensaje no toca
+  // el epoch, así el stream SSE en curso no se pierde por un remonte.
+  return (
+    <RuntimeScope key={scopeEpoch} threadId={threadId}>
+      {children}
+    </RuntimeScope>
   );
 }

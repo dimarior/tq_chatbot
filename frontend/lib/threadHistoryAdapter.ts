@@ -14,6 +14,7 @@ import {
   setActiveRemoteThreadId,
 } from "./threadListAdapter";
 import { useSourcesStore } from "./sourcesStore";
+import { useThreadHydrationStore } from "./threadHydrationStore";
 import type { ApiMessageRow, Source } from "./types";
 
 const UUID_RE =
@@ -49,25 +50,30 @@ export function useThreadHistoryAdapter(
   return useMemo(
     () => ({
       async load() {
-        if (!routeThreadId) {
+        const remoteId = routeThreadId ?? getActiveRemoteThreadId();
+        if (!remoteId) {
           setActiveRemoteThreadId(null);
           return ExportedMessageRepository.fromArray([]);
         }
 
-        const remoteId = routeThreadId;
         setActiveRemoteThreadId(remoteId);
-        const rows = await jsonFetch<ApiMessageRow[]>(
-          apiUrl(`/api/threads/${remoteId}/messages`),
-        );
-        rehydrateSources(rows);
-        return ExportedMessageRepository.fromArray(
-          rows.map((row) => ({
-            id: row.id,
-            role: row.role,
-            content: row.content,
-            createdAt: new Date(row.created_at),
-          })),
-        );
+        useThreadHydrationStore.getState().beginHydration(remoteId);
+        try {
+          const rows = await jsonFetch<ApiMessageRow[]>(
+            apiUrl(`/api/threads/${remoteId}/messages`),
+          );
+          rehydrateSources(rows);
+          return ExportedMessageRepository.fromArray(
+            rows.map((row) => ({
+              id: row.id,
+              role: row.role,
+              content: row.content,
+              createdAt: new Date(row.created_at),
+            })),
+          );
+        } finally {
+          useThreadHydrationStore.getState().endHydration(remoteId);
+        }
       },
 
       async append({ message, parentId }) {
