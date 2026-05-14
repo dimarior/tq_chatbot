@@ -1,9 +1,10 @@
 """Endpoints de persistencia de hilos.
 
 Implementa la superficie que assistant-ui's RemoteThreadListAdapter espera.
-La paginación usa updated_at ISO como cursor (descendente, hilos más recientes
-primero). El chat (`/api/chat`) sigue siendo stateless: la persistencia es
-responsabilidad de estos endpoints.
+La paginación usa created_at ISO como cursor (descendente, hilos más recientes
+primero). El orden del sidebar es estable: abrir, renombrar o responder un hilo
+no debe cambiar su posición. El chat (`/api/chat`) sigue siendo stateless: la
+persistencia es responsabilidad de estos endpoints.
 """
 from __future__ import annotations
 
@@ -68,14 +69,14 @@ async def list_threads(request: Request, after: str | None = None) -> ThreadList
         if cursor_dt is None:
             rows = await conn.fetch(
                 """
-                SELECT id, title, archived, updated_at
+                SELECT id, title, archived, created_at
                 FROM conversations
                 WHERE EXISTS (
                     SELECT 1
                     FROM messages
                     WHERE conversation_id = conversations.id
                 )
-                ORDER BY updated_at DESC
+                ORDER BY created_at DESC
                 LIMIT $1
                 """,
                 PAGE_SIZE + 1,
@@ -83,15 +84,15 @@ async def list_threads(request: Request, after: str | None = None) -> ThreadList
         else:
             rows = await conn.fetch(
                 """
-                SELECT id, title, archived, updated_at
+                SELECT id, title, archived, created_at
                 FROM conversations
-                WHERE updated_at < $1
+                WHERE created_at < $1
                   AND EXISTS (
                       SELECT 1
                       FROM messages
                       WHERE conversation_id = conversations.id
                   )
-                ORDER BY updated_at DESC
+                ORDER BY created_at DESC
                 LIMIT $2
                 """,
                 cursor_dt,
@@ -100,7 +101,7 @@ async def list_threads(request: Request, after: str | None = None) -> ThreadList
 
     next_cursor: str | None = None
     if len(rows) > PAGE_SIZE:
-        next_cursor = rows[PAGE_SIZE - 1]["updated_at"].isoformat()
+        next_cursor = rows[PAGE_SIZE - 1]["created_at"].isoformat()
         rows = rows[:PAGE_SIZE]
 
     threads = [ThreadOut(id=r["id"], title=r["title"], archived=r["archived"]) for r in rows]
