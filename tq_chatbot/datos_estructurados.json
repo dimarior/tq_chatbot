@@ -1,0 +1,368 @@
+{
+    "meta": {
+        "pipeline": "Knowledge Base ETL — Optimizado con Caché + Reintentos",
+        "fecha_generacion": "2026-05-10T15:05:37.738047",
+        "config_snapshot": {
+            "chunk_size": 800,
+            "chunk_overlap": 100,
+            "llm_model": "gemini-2.5-flash",
+            "embed_model": "intfloat/multilingual-e5-large"
+        }
+    },
+    "perfil_corporativo": {
+        "razon_social": "Tecnoquímicas S.A.",
+        "NIT": "890.300.153-6",
+        "todos_nits_detectados": [],
+        "colaboradores": "8.000",
+        "referencias_producidas": "4.000",
+        "sedes_productivas": "Ocho en Colombia, una en Centroamérica",
+        "anos_trayectoria": "más de 90 años",
+        "paises_exportacion": "más de 20 países de América"
+    },
+    "portafolio": {
+        "marcas_detectadas_en_corpus": [
+            "Bonfiest",
+            "Content",
+            "Crema No. 4",
+            "CureBand",
+            "Duraflex",
+            "Gastrofast",
+            "Hidraplus",
+            "Ibuflash",
+            "MK",
+            "Noraver",
+            "Sal de Frutas LUA",
+            "Winny",
+            "Yodora"
+        ]
+    },
+    "directorio_contacto": {
+        "correos_oficiales": [
+            "info.data@tecnoquimicas.com",
+            "lineaeticatqgrupo@resguarda.com",
+            "mjcardona@tecnoquimicas.com",
+            "semillerotq@tecnoquimicas.com",
+            "serviciosalconsumidor@tecnoquimicas.com",
+            "serviciosalconsumidor@tqgrupo.com"
+        ],
+        "horarios_detectados": [],
+        "telefonos_globales": [
+            "(1) 7862455908",
+            "01 8000 52 33 39",
+            "1 (809) 566 4703",
+            "1800 52 33 39",
+            "502 249 25700",
+            "503 (2) 248 5100",
+            "503 2 248 51 10",
+            "503 22674700",
+            "506 440 41720",
+            "507 321 5263",
+            "57 (2) 882 5555",
+            "57 60 (1) 234 7210",
+            "57 60 (1) 742 6669",
+            "57 60 (2) 485 8588",
+            "57 60 (2) 882 5555",
+            "57 60 (2) 883 9392",
+            "57 60 (4) 265 8884",
+            "57 60 (5) 347 5900",
+            "57 60 (6) 330 7988",
+            "57 60 (7) 643 5500",
+            "593 (2) 3324013",
+            "593 (2) 3324064",
+            "593 (4) 3714440",
+            "60 (1) 234 7210",
+            "60 (1) 417 8650",
+            "60 (1) 529 8502",
+            "60 (1) 742 6669",
+            "60 (2) 445 4123",
+            "60 (2) 485 8588",
+            "60 (2) 553 0044",
+            "60 (2) 666 8666",
+            "60 (2) 695 8173",
+            "60 (2) 882 5555",
+            "60 (2) 883 3323",
+            "60 (4) 307 0084",
+            "60 (5) 323 0353",
+            "60 (5) 326 5662",
+            "60 (7) 637 7773"
+        ],
+        "sedes_y_direcciones_oficiales": {
+            "Principal Colombia": {
+                "direccion": "Calle 23 No. 7 - 39 Barrio San Nicolás",
+                "ubicacion": "Santiago de Cali, Colombia",
+                "telefonos": [
+                    "57 60 (2) 485 8588",
+                    "57 60 (2) 882 5555"
+                ]
+            },
+            "Regional Antioquia": {
+                "direccion": "Carrera 51 No. 14 - 249 Barrio Guayabal",
+                "ubicacion": "Medellín",
+                "telefonos": [
+                    "57 60 (4) 265 8884"
+                ]
+            },
+            "Regional Atlántico": {
+                "direccion": "Carrera 18 # 28 - 142 Barrio Las Nieves",
+                "ubicacion": "Barranquilla",
+                "telefonos": [
+                    "57 60 (5) 347 5900"
+                ]
+            },
+            "Centro Pacífico": {
+                "direccion": "Carrera 7 No. 22 - 01 Principal San Nicolás Cali",
+                "ubicacion": "Cali",
+                "telefonos": [
+                    "57 60 (2) 883 9392"
+                ]
+            },
+            "Regional Cundinamarca": {
+                "direccion": "Carrera 34 No. 18 - 31 Barrio Cundinamarca",
+                "ubicacion": "Bogotá",
+                "telefonos": [
+                    "57 60 (1) 234 7210",
+                    "57 60 (1) 742 6669"
+                ]
+            },
+            "Regional Oriente": {
+                "direccion": "Calle 58 No. 22 - 12 Barrio Puerta del Sol",
+                "ubicacion": "Bucaramanga",
+                "telefonos": [
+                    "57 60 (7) 643 5500"
+                ]
+            },
+            "Regional Pereira": {
+                "direccion": "Calle 15 No. 7ª - 58 Multicentro La Macarena, locales 12 y 13",
+                "ubicacion": "Pereira",
+                "telefonos": [
+                    "57 60 (6) 330 7988"
+                ]
+            },
+            "Arpack": {
+                "direccion": "Conjunto Industrial Parque Sur Km 24 Vía Cali-Santander (Frente a la Y de Villa Rica)",
+                "ubicacion": "Villa Rica",
+                "telefonos": [
+                    "60 (2) 882 5555"
+                ]
+            },
+            "Coldesivos / Adhinter": {
+                "direccion": "Calle 39 No. 1 - 112 Barrio Manzanares",
+                "ubicacion": "Santiago de Cali",
+                "telefonos": [
+                    "60 (2) 445 4123"
+                ]
+            },
+            "Jamundí": {
+                "direccion": "Vía Cali-Jamundí Km 23",
+                "ubicacion": "Jamundí",
+                "telefonos": [
+                    "60 (2) 553 0044"
+                ]
+            },
+            "Moré Química": {
+                "direccion": "Vía Soacha-Sibaté 300m después del desvío diagonal al Seguro Social del Muña",
+                "ubicacion": "Soacha-Sibaté",
+                "telefonos": [
+                    "60 (1) 529 8502"
+                ]
+            },
+            "San Nicolás": {
+                "direccion": "",
+                "ubicacion": "Cali",
+                "telefonos": [
+                    "60 (2) 485 8588",
+                    "(1) 7862455908"
+                ]
+            },
+            "Tecnofar": {
+                "direccion": "Vía Cali-Santander",
+                "ubicacion": "Cali",
+                "telefonos": []
+            },
+            "Yumbo": {
+                "direccion": "Calle 15 No. 30 - 98 Autopista Cali-Yumbo Km 3",
+                "ubicacion": "Yumbo",
+                "telefonos": [
+                    "60 (2) 666 8666"
+                ]
+            },
+            "Tecnosur": {
+                "direccion": "Conjunto Industrial Parque Sur km 24 Vía Cali - Santander",
+                "ubicacion": "Cali",
+                "telefonos": []
+            },
+            "Indugráficas": {
+                "direccion": "Calle 7ª No. 22ª - 21",
+                "ubicacion": "Cali",
+                "telefonos": [
+                    "60 (2) 883 3323"
+                ]
+            },
+            "Centro de Distribución": {
+                "direccion": "Cra 35A No. 16 - 80 Centro Logístico El Corrijo, Bodega #6 (Acopi Yumbo)",
+                "ubicacion": "El Cortijo, Colombia",
+                "telefonos": [
+                    "60 (2) 695 8173"
+                ]
+            },
+            "Cendis Bogotá": {
+                "direccion": "Carrera 68B No. 12B - 04 Zona Industrial Puente Aranda",
+                "ubicacion": "Bogotá, Colombia",
+                "telefonos": [
+                    "60 (1) 417 8650"
+                ]
+            },
+            "Cendis Funza": {
+                "direccion": "Urbanización Industria Juan Carlos II, Bodega 5 y 6, Etapa 1 Zona Rural del municipio de Funza",
+                "ubicacion": "Funza",
+                "telefonos": [
+                    "60 (1) 234 7210"
+                ]
+            },
+            "Plataforma Antioquia": {
+                "direccion": "Calle 82 Sur 47F - 85, Servicios Logísticos Ferbienes SABANETA Regional Antioquia Medellin Ofic",
+                "ubicacion": "Sabaneta",
+                "telefonos": [
+                    "60 (4) 307 0084"
+                ]
+            },
+            "Plataforma Atlántico": {
+                "direccion": "Carrera 71 # 3-568 Polígono Industrial Galapark, Bodega 2",
+                "ubicacion": "Galapa, Colombia",
+                "telefonos": [
+                    "60 (5) 323 0353",
+                    "60 (5) 326 5662"
+                ]
+            },
+            "Plataforma Bogotá": {
+                "direccion": "Av. Calle 24 # 95-12 Parque Industrial Portos, Bodegas 34 y 35",
+                "ubicacion": "Bogotá",
+                "telefonos": [
+                    "60 (1) 742 6669"
+                ]
+            },
+            "Plataforma Bucaramanga": {
+                "direccion": "Calle 73 # 42W-16 Parque Industrial Provincia de Soto Etapa 2, Bodega 30",
+                "ubicacion": "Bucaramanga, Colombia",
+                "telefonos": [
+                    "60 (7) 637 7773"
+                ]
+            },
+            "Principal Costa Rica": {
+                "direccion": "Edificio CV Tercer Piso, Sabana Norte, Calle 62A, Esquina Av. 7",
+                "ubicacion": "San José de Costa Rica",
+                "telefonos": [
+                    "506 440 41720",
+                    "01 8000 52 33 39"
+                ]
+            },
+            "Principal Guayaquil": {
+                "direccion": "Carlos Julio Arosemena y las Monjas Centro Comercial Aventura Plaza, local 8",
+                "ubicacion": "Guayaquil, Ecuador",
+                "telefonos": [
+                    "593 (4) 3714440"
+                ]
+            },
+            "Guayaquil Bodega": {
+                "direccion": "KM 9 1/2 vía Daule, Lotización Inmaconsa, Calle Quinquellas MZ 24 Solar 14-1 lotización Inmaconsa, Manzana 009",
+                "ubicacion": "Guayaquil",
+                "telefonos": []
+            },
+            "Quito": {
+                "direccion": "Portugal E10 -77 entre 6 Diciembre y República del Salvador Edificio Ambar, piso 8 oficina 801",
+                "ubicacion": "Quito, Ecuador",
+                "telefonos": [
+                    "593 (2) 3324064",
+                    "593 (2) 3324013",
+                    "1800 52 33 39"
+                ]
+            },
+            "Santa Elena I": {
+                "direccion": "Calle Chaparrastique avenida Lamatepec No. 6 Zona Industrial Santa Elena, antiguo Cuscatian, la Libertad",
+                "ubicacion": "San Salvador, El Salvador",
+                "telefonos": [
+                    "503 (2) 248 5100"
+                ]
+            },
+            "Santa Elena II": {
+                "direccion": "Urbanización Industrial Santa Elena Calle Chaparrastique # 6 - 7",
+                "ubicacion": "Antigua Cuscatlan, El Salvador",
+                "telefonos": [
+                    "503 2 248 51 10"
+                ]
+            },
+            "Planta Bonima": {
+                "direccion": "Bonima Boulevard del Ejercito km 11.5 Ilopango",
+                "ubicacion": "Ilopango, El Salvador",
+                "telefonos": [
+                    "503 22674700"
+                ]
+            },
+            "Bodega Matazano": {
+                "direccion": "Calle antigua al Matazano Avenida Cerro Verde Frente a Comunidad 15 de Septiembre",
+                "ubicacion": "Soyapango El Salvador",
+                "telefonos": []
+            },
+            "Principal Guatemala": {
+                "direccion": "3ra. Avenida 10-80, Zona 10 Edificio Forum Zona Viva, Torre 1, Nivel 4, oficinas 403 y 404",
+                "ubicacion": "Ciudad de Guatemala",
+                "telefonos": [
+                    "502 249 25700",
+                    "01 8000 52 33 39"
+                ]
+            },
+            "Honduras - San Pedro Sula": {
+                "direccion": "Centro Comercial Santa Mónica Fase 3, Local No. 39, segundo piso, Boulevard del Norte",
+                "ubicacion": "San Pedro Sula – Honduras",
+                "telefonos": [
+                    "57 (2) 882 5555"
+                ]
+            },
+            "Honduras - Tegucigalpa": {
+                "direccion": "Edificio Metrópolis, Boulevard Suyapa Local 21107 - Torre 2, Piso 11",
+                "ubicacion": "Tegucigalpa M.D.C., Honduras",
+                "telefonos": []
+            },
+            "Principal Nicaragua": {
+                "direccion": "Centro Comercial Camino de Oriente Costado Sur, Centro de Negocios KAKAU, Piso 8, Módulo A 801",
+                "ubicacion": "Managua",
+                "telefonos": []
+            },
+            "Principal Panamá": {
+                "direccion": "Av. La Rotonda con calle Transversal P.H. Prime Time Tower, Torre Banco Aliado, Piso 24, Oficina 24-A",
+                "ubicacion": "Costa del Este Panamá, Ciudad de Panamá",
+                "telefonos": [
+                    "507 321 5263"
+                ]
+            },
+            "Principal República Dominicana": {
+                "direccion": "Lope de Vega #29 Torre Novo-Centro, Piso 5, Local 506",
+                "ubicacion": "Ensanche Naco, Santo Domingo",
+                "telefonos": [
+                    "1 (809) 566 4703"
+                ]
+            }
+        },
+        "linea_etica": {
+            "email": "lineaeticatqgrupo@resguarda.com",
+            "whatsapp": "+57 1 7868154",
+            "telefonos_por_pais": [
+                "01-800-752-2222",
+                "0-800-054-1046",
+                "1-800-000031",
+                "800-6988",
+                "1-800-835-0393",
+                "800-2791-9047",
+                "001-800-226-0469",
+                "011-00800-052-1375",
+                "1-888-760-0133"
+            ],
+            "portal": "http://www.resguarda.com/lineaeticatq"
+        },
+        "servicio_al_cliente": {
+            "telefono_gratuito": "01 8000 52 33 39",
+            "correo": "serviciosalconsumidor@tecnoquimicas.com",
+            "canal": "PQRS — Preguntas, Eventos Adversos, Reclamos, Sugerencias"
+        }
+    }
+}
