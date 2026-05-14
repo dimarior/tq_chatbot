@@ -11,7 +11,6 @@ import json
 from datetime import datetime
 from uuid import UUID, uuid4
 
-import asyncpg
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from apps.api.schemas import (
@@ -45,6 +44,16 @@ def _title_user_prompt(messages: list[ChatMessage]) -> str:
     )
 
 
+def _parse_sources(value: object) -> list[Source] | None:
+    if not value:
+        return None
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, list):
+        return None
+    return [Source(**s) for s in value]
+
+
 @router.get("/api/threads", response_model=ThreadListOut)
 async def list_threads(request: Request, after: str | None = None) -> ThreadListOut:
     pool = request.app.state.pool
@@ -61,6 +70,11 @@ async def list_threads(request: Request, after: str | None = None) -> ThreadList
                 """
                 SELECT id, title, archived, updated_at
                 FROM conversations
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM messages
+                    WHERE conversation_id = conversations.id
+                )
                 ORDER BY updated_at DESC
                 LIMIT $1
                 """,
@@ -72,6 +86,11 @@ async def list_threads(request: Request, after: str | None = None) -> ThreadList
                 SELECT id, title, archived, updated_at
                 FROM conversations
                 WHERE updated_at < $1
+                  AND EXISTS (
+                      SELECT 1
+                      FROM messages
+                      WHERE conversation_id = conversations.id
+                  )
                 ORDER BY updated_at DESC
                 LIMIT $2
                 """,
@@ -90,14 +109,12 @@ async def list_threads(request: Request, after: str | None = None) -> ThreadList
 
 @router.post("/api/threads", response_model=ThreadOut)
 async def create_thread(payload: ThreadCreate, request: Request) -> ThreadOut:
-    pool = request.app.state.pool
     new_id = uuid4()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "INSERT INTO conversations (id) VALUES ($1) RETURNING id, title, archived",
-            new_id,
-        )
-    return ThreadOut(id=row["id"], title=row["title"], archived=row["archived"])
+    # assistant-ui puede pedir un hilo "draft" que nunca recibe mensajes
+    # (por ejemplo, al montar o recargar una ruta existente). No lo
+    # persistimos aquí para evitar basura; la conversación se materializa en el
+    # primer append de mensaje.
+    return ThreadOut(id=new_id, title="Nueva conversación", archived=False)
 
 
 @router.get("/api/threads/{thread_id}", response_model=ThreadOut)
@@ -164,6 +181,18 @@ async def generate_title(thread_id: UUID, payload: TitleRequest, request: Reques
     raw = await ollama.complete(TITLE_SYSTEM, _title_user_prompt(msgs))
     # Modelos a veces devuelven el título envuelto en comillas o con prefijos.
     title = raw.strip().strip('"').strip("'").splitlines()[0][:80] or "Nueva conversación"
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE conversations
+            SET title = $2, updated_at = now()
+            WHERE id = $1
+            """,
+            thread_id,
+            title,
+        )
+
     return TitleResponse(title=title)
 
 
@@ -186,7 +215,7 @@ async def list_messages(thread_id: UUID, request: Request) -> list[MessageOut]:
 
     out: list[MessageOut] = []
     for r in rows:
-        sources = [Source(**s) for s in r["sources"]] if r["sources"] else None
+        sources = _parse_sources(r["sources"])
         out.append(
             MessageOut(
                 id=r["id"],
@@ -215,27 +244,32 @@ async def append_message(thread_id: UUID, payload: MessageAppend, request: Reque
     # La FK valida la existencia del hilo; un re-post idempotente (ON CONFLICT)
     # no bumpea updated_at, lo cual es la semántica correcta.
     async with pool.acquire() as conn:
-        try:
-            await conn.execute(
-                """
-                WITH ins AS (
-                    INSERT INTO messages (id, conversation_id, parent_id, role, content, sources)
-                    VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-                    ON CONFLICT (id) DO NOTHING
-                    RETURNING conversation_id
-                )
-                UPDATE conversations
-                SET updated_at = now()
-                WHERE id = $2 AND EXISTS (SELECT 1 FROM ins)
-                """,
-                msg_id,
-                thread_id,
-                payload.parentId,
-                msg.role,
-                msg.content,
-                sources_json,
+        await conn.execute(
+            """
+            INSERT INTO conversations (id)
+            VALUES ($1)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            thread_id,
+        )
+        await conn.execute(
+            """
+            WITH ins AS (
+                INSERT INTO messages (id, conversation_id, parent_id, role, content, sources)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                ON CONFLICT (id) DO NOTHING
+                RETURNING conversation_id
             )
-        except asyncpg.ForeignKeyViolationError as e:
-            raise HTTPException(status_code=404, detail="Hilo no encontrado") from e
+            UPDATE conversations
+            SET updated_at = now()
+            WHERE id = $2 AND EXISTS (SELECT 1 FROM ins)
+            """,
+            msg_id,
+            thread_id,
+            payload.parentId,
+            msg.role,
+            msg.content,
+            sources_json,
+        )
 
     return {"id": str(msg_id)}

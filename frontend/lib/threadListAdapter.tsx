@@ -2,18 +2,49 @@
 
 import {
   ExportedMessageRepository,
-  RuntimeAdapterProvider,
-  useAssistantApi,
   type RemoteThreadListAdapter,
-  type ThreadHistoryAdapter,
 } from "@assistant-ui/react";
 import { createAssistantStream } from "assistant-stream";
-import { useMemo } from "react";
+import { create } from "zustand";
 
 import { apiUrl } from "./api";
 import { flattenContent } from "./messages";
-import { useSourcesStore } from "./sourcesStore";
-import type { ApiMessageRow, ApiThread, Source } from "./types";
+import type { ApiThread } from "./types";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+let activeRemoteThreadId: string | null = null;
+let reloadThreads: () => Promise<void> = async () => {};
+
+type ListedThreadState = {
+  remoteIds: Record<string, true>;
+  setRemoteIds: (ids: string[]) => void;
+};
+
+export const useListedThreadStore = create<ListedThreadState>((set) => ({
+  remoteIds: {},
+  setRemoteIds: (ids) =>
+    set({
+      remoteIds: Object.fromEntries(ids.map((id) => [id, true] as const)),
+    }),
+}));
+
+export function setActiveRemoteThreadId(threadId: string | null) {
+  activeRemoteThreadId = threadId;
+}
+
+export function getActiveRemoteThreadId() {
+  return activeRemoteThreadId;
+}
+
+export function setReloadThreads(fn: (() => Promise<void>) | null) {
+  reloadThreads = fn ?? (async () => {});
+}
+
+export async function reloadThreadList() {
+  await reloadThreads().catch(() => undefined);
+}
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -37,6 +68,9 @@ export const threadListAdapter: RemoteThreadListAdapter = {
     // hidratación del sidebar.
     try {
       const data = await jsonFetch<{ threads: ApiThread[] }>(apiUrl("/api/threads"));
+      useListedThreadStore
+        .getState()
+        .setRemoteIds(data.threads.map((thread) => thread.id));
       return {
         threads: data.threads.map((t) => ({
           status: t.archived ? ("archived" as const) : ("regular" as const),
@@ -45,6 +79,7 @@ export const threadListAdapter: RemoteThreadListAdapter = {
         })),
       };
     } catch (e) {
+      useListedThreadStore.getState().setRemoteIds([]);
       console.warn("[threadListAdapter.list] fallo cargando hilos:", e);
       return { threads: [] };
     }
@@ -56,6 +91,7 @@ export const threadListAdapter: RemoteThreadListAdapter = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ localId: threadId }),
     });
+    setActiveRemoteThreadId(created.id);
     return { remoteId: created.id, externalId: undefined };
   },
 
@@ -79,6 +115,7 @@ export const threadListAdapter: RemoteThreadListAdapter = {
 
   async fetch(remoteId) {
     const t = await jsonFetch<ApiThread>(apiUrl(`/api/threads/${remoteId}`));
+    setActiveRemoteThreadId(t.id);
     return {
       status: t.archived ? ("archived" as const) : ("regular" as const),
       remoteId: t.id,
@@ -108,69 +145,5 @@ export const threadListAdapter: RemoteThreadListAdapter = {
         console.warn("[threadListAdapter.generateTitle] fallo:", e);
       }
     });
-  },
-
-  unstable_Provider({ children }) {
-    const aui = useAssistantApi();
-    const history = useMemo<ThreadHistoryAdapter>(
-      () => ({
-        async load() {
-          const remoteId = aui.threadListItem().getState().remoteId;
-          if (!remoteId) return { messages: [] };
-          const rows = await jsonFetch<ApiMessageRow[]>(
-            apiUrl(`/api/threads/${remoteId}/messages`),
-          );
-          // Re-poblar el sourcesStore: los chips no son parte del content
-          // stream, así que sin esto se pierden al recargar el hilo.
-          const entries: Array<[string, Source[]]> = [];
-          for (const r of rows) {
-            if (r.role === "assistant" && r.sources && r.sources.length > 0) {
-              entries.push([r.id, r.sources]);
-            }
-          }
-          if (entries.length) useSourcesStore.getState().bulkSet(entries);
-          return ExportedMessageRepository.fromArray(
-            rows.map((r) => ({
-              id: r.id,
-              role: r.role,
-              content: r.content,
-              createdAt: new Date(r.created_at),
-            })),
-          );
-        },
-        async append({ message, parentId }) {
-          if (message.role === "system") return;
-          const { remoteId } = await aui.threadListItem().initialize();
-          const text = flattenContent(message.content);
-          const sources =
-            message.role === "assistant"
-              ? useSourcesStore.getState().byId[message.id] ?? null
-              : null;
-          await jsonFetch<{ id: string }>(
-            apiUrl(`/api/threads/${remoteId}/messages`),
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                message: {
-                  id: message.id,
-                  role: message.role,
-                  content: text,
-                  sources,
-                },
-                parentId: parentId ?? null,
-              }),
-            },
-          );
-        },
-      }),
-      [aui],
-    );
-
-    return (
-      <RuntimeAdapterProvider adapters={{ history }}>
-        {children}
-      </RuntimeAdapterProvider>
-    );
   },
 };

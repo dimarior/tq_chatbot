@@ -11,9 +11,9 @@ export function SourcesFooter({ messageId }: { messageId: string | undefined }) 
       <span className="text-[11px] font-medium uppercase tracking-wider text-ink-subtle">
         Fuentes
       </span>
-      {sources.map((s) => (
+      {sources.map((s, index) => (
         <a
-          key={s.url}
+          key={`${messageId ?? "source"}:${s.url}:${index}`}
           href={s.url}
           target="_blank"
           rel="noopener noreferrer"
