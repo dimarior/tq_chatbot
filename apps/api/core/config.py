@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    cors_origins: str = "http://localhost:8000"
+    cors_origins: str = "http://localhost:8000,http://localhost:3000"
 
     top_k: int = 6
     # Coseno mínimo para considerar un chunk relevante. Por debajo, se descarta
