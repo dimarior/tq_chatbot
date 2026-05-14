@@ -1,0 +1,61 @@
+{
+  "empresa": {
+    "nombre": "Tecnoquímicas S.A.",
+    "nombre_comercial": "TQ Confiable",
+    "nit": "890.300.279-7",
+    "fundacion": "1934",
+    "nombre_original": "Colombia Sales Company",
+    "anos_trayectoria": "90+",
+    "colaboradores": "8.200+",
+    "paises_presencia": "20+",
+    "referencias_productos": "4.000+"
+  },
+  "contacto": {
+    "telefono_cliente": "01 8000 912 808",
+    "linea_etica": "01 8000 518 888",
+    "email_cliente": "servicioalcliente@tqconfiable.com",
+    "sitio_web": "https://www.tqconfiable.com",
+    "portal_medico": "https://www.tqfarma.com",
+    "horario_atencion": "Lunes a viernes de 7:00 a.m. a 7:00 p.m. | Sábados de 8:00 a.m. a 1:00 p.m."
+  },
+  "sedes": {
+    "sede_principal": {
+      "ciudad": "Cali",
+      "departamento": "Valle del Cauca",
+      "direccion": "Carrera 28 # 1-50, Zona Industrial Acopi-Yumbo",
+      "descripcion": "Sede principal y planta de manufactura"
+    },
+    "bogota": {
+      "ciudad": "Bogotá",
+      "departamento": "Cundinamarca",
+      "descripcion": "Oficina comercial"
+    }
+  },
+  "marcas": [
+    "MK",
+    "Winny",
+    "Yodora",
+    "Colbón",
+    "Gastrofast",
+    "Ibuflash",
+    "Duraflex",
+    "Sal de Frutas Lua",
+    "Content"
+  ],
+  "lineas_negocio": [
+    "Farmacéutica (medicamentos Rx y OTC)",
+    "Consumo masivo (cuidado personal e higiene)",
+    "Agroquímica (TQ Agro)",
+    "Adhesivos industriales (Colbón)"
+  ],
+  "sostenibilidad": {
+    "programa_planeta": "Reducción de huella de carbono y gestión responsable del agua",
+    "programa_gente": "Bienestar de colaboradores y comunidades cercanas",
+    "ced_tq": "Centro de Desarrollo Infantil para hijos de colaboradores"
+  },
+  "empleo": {
+    "portal_ofertas": "https://www.tqconfiable.com/trabaja/ofertas/",
+    "programa_beneficios": "Educación, salud, recreación, plan canguro y desarrollo profesional",
+    "programa_universitarios": "Vive TQ — programa para estudiantes universitarios"
+  }
+}
