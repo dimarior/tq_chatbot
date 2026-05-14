@@ -1,47 +1,36 @@
 "use client";
 
-import {
-  ThreadListPrimitive,
-  useAui,
-  useAuiState,
-} from "@assistant-ui/react";
+import { ThreadListPrimitive, useAuiState } from "@assistant-ui/react";
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-import { useListedThreadStore } from "@/lib/threadListAdapter";
+import {
+  archiveRemoteThread,
+  setActiveRemoteThreadId,
+  useListedThreadStore,
+} from "@/lib/threadListAdapter";
+import { usePendingResponseStore } from "@/lib/pendingResponseStore";
+import { openRuntimeScope } from "@/lib/runtimeScopeStore";
 
 export function ThreadList() {
-  const aui = useAui();
   const router = useRouter();
   const isLoading = useAuiState((s) => s.threads.isLoading);
-  const mainThreadId = useAuiState((s) => s.threads.mainThreadId);
-  const listedRemoteIds = useListedThreadStore((s) => s.remoteIds);
-  const threadItems = useAuiState((s) => s.threads.threadItems);
-  const visibleThreadItems = Array.from(
-    threadItems
-      .filter(
-        (item) =>
-          item.status === "regular" &&
-          !!item.remoteId &&
-          listedRemoteIds[item.remoteId] === true,
-      )
-      .reduce((map, item) => {
-        const remoteId = item.remoteId!;
-        const current = map.get(remoteId);
-        if (!current || scoreThreadItem(item, mainThreadId) >= scoreThreadItem(current, mainThreadId)) {
-          map.set(remoteId, item);
-        }
-        return map;
-      }, new Map<string, (typeof threadItems)[number]>()),
-  ).map(([, item]) => item);
-
-  const threadCount = visibleThreadItems.length;
+  const activeRemoteId = useAuiState((s) => s.threadListItem.remoteId);
+  const listedThreads = useListedThreadStore((s) => s.threads);
+  const visibleThreads = listedThreads.filter((thread) => !thread.archived);
+  const threadCount = visibleThreads.length;
+  const beginNewChat = usePendingResponseStore((s) => s.beginNewChat);
+  const clearPendingResponse = usePendingResponseStore((s) => s.clear);
 
   const handleNewChat = useCallback(() => {
     // Mantener `/chat` hasta el primer mensaje evita persistir hilos vacios.
-    // router.replace("/chat");
-    router.push("/chat");
-  }, [router]);
+    // openRuntimeScope(null) remonta el runtime con un hilo en blanco; no se
+    // crea ningun hilo remoto hasta que el usuario envia el primer mensaje.
+    beginNewChat();
+    setActiveRemoteThreadId(null);
+    openRuntimeScope(null);
+    router.replace("/chat");
+  }, [beginNewChat, router]);
 
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col">
@@ -55,14 +44,16 @@ export function ThreadList() {
       </div>
 
       <div className="px-2 pb-2">
-        <ThreadListPrimitive.New
+        <button
+          type="button"
+          data-testid="new-chat-button"
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink hover:bg-panelHover"
           aria-label="Nueva conversación"
           onClick={handleNewChat}
         >
           <NewChatIcon />
           <span>Nueva conversación</span>
-        </ThreadListPrimitive.New>
+        </button>
       </div>
 
       <div className="mt-1 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-ink-subtle">
@@ -73,13 +64,30 @@ export function ThreadList() {
         {isLoading ? (
           <ThreadListLoading />
         ) : threadCount > 0 ? (
-          visibleThreadItems.map((item) => (
+          visibleThreads.map((thread) => (
             <ThreadListItem
-              key={item.id}
-              active={item.id === mainThreadId}
-              title={item.title}
-              onOpen={() => aui.threads().item({ id: item.id }).switchTo()}
-              onArchive={() => aui.threads().item({ id: item.id }).archive()}
+              key={thread.id}
+              active={thread.id === activeRemoteId}
+              title={thread.title}
+              onOpen={() => {
+                // Cambiar entre hilos existentes NO remonta: useRemoteThreadList
+                // hace el switch por el cambio del prop threadId. Remontar aquí
+                // se saltaría el estado de carga al hidratar el hilo.
+                clearPendingResponse();
+                setActiveRemoteThreadId(thread.id);
+                router.push(`/chat/${thread.id}`);
+              }}
+              onArchive={async () => {
+                // Si archivamos el hilo activo, primero salimos a /chat en
+                // blanco. archiveRemoteThread hace PATCH + recarga la lista,
+                // así el sidebar se actualiza en ambos casos.
+                if (thread.id === activeRemoteId) {
+                  setActiveRemoteThreadId(null);
+                  openRuntimeScope(null);
+                  router.replace("/chat");
+                }
+                await archiveRemoteThread(thread.id);
+              }}
             />
           ))
         ) : (
@@ -142,17 +150,6 @@ function ThreadListItem({
       </button>
     </div>
   );
-}
-
-function scoreThreadItem(
-  item: {
-    id: string;
-    title?: string | undefined;
-  },
-  mainThreadId: string,
-) {
-  const hasRealTitle = !!item.title && item.title !== "Nueva conversación";
-  return (hasRealTitle ? 2 : 0) + (item.id === mainThreadId ? 1 : 0);
 }
 
 function NewChatIcon() {

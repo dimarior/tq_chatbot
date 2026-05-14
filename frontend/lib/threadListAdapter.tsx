@@ -15,19 +15,17 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let activeRemoteThreadId: string | null = null;
+let routeRemoteThreadId: string | null = null;
 let reloadThreads: () => Promise<void> = async () => {};
 
 type ListedThreadState = {
-  remoteIds: Record<string, true>;
-  setRemoteIds: (ids: string[]) => void;
+  threads: ApiThread[];
+  setThreads: (threads: ApiThread[]) => void;
 };
 
 export const useListedThreadStore = create<ListedThreadState>((set) => ({
-  remoteIds: {},
-  setRemoteIds: (ids) =>
-    set({
-      remoteIds: Object.fromEntries(ids.map((id) => [id, true] as const)),
-    }),
+  threads: [],
+  setThreads: (threads) => set({ threads }),
 }));
 
 export function setActiveRemoteThreadId(threadId: string | null) {
@@ -38,12 +36,25 @@ export function getActiveRemoteThreadId() {
   return activeRemoteThreadId;
 }
 
+export function setRouteRemoteThreadId(threadId: string | null) {
+  routeRemoteThreadId = threadId;
+}
+
+export function getRouteRemoteThreadId() {
+  return routeRemoteThreadId;
+}
+
 export function setReloadThreads(fn: (() => Promise<void>) | null) {
   reloadThreads = fn ?? (async () => {});
 }
 
 export async function reloadThreadList() {
   await reloadThreads().catch(() => undefined);
+}
+
+export async function archiveRemoteThread(remoteId: string) {
+  await patchThread(remoteId, { archived: true });
+  await reloadThreadList();
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -68,9 +79,7 @@ export const threadListAdapter: RemoteThreadListAdapter = {
     // hidratación del sidebar.
     try {
       const data = await jsonFetch<{ threads: ApiThread[] }>(apiUrl("/api/threads"));
-      useListedThreadStore
-        .getState()
-        .setRemoteIds(data.threads.map((thread) => thread.id));
+      useListedThreadStore.getState().setThreads(data.threads);
       return {
         threads: data.threads.map((t) => ({
           status: t.archived ? ("archived" as const) : ("regular" as const),
@@ -79,13 +88,18 @@ export const threadListAdapter: RemoteThreadListAdapter = {
         })),
       };
     } catch (e) {
-      useListedThreadStore.getState().setRemoteIds([]);
+      useListedThreadStore.getState().setThreads([]);
       console.warn("[threadListAdapter.list] fallo cargando hilos:", e);
       return { threads: [] };
     }
   },
 
   async initialize(threadId: string) {
+    if (routeRemoteThreadId) {
+      setActiveRemoteThreadId(routeRemoteThreadId);
+      return { remoteId: routeRemoteThreadId, externalId: undefined };
+    }
+
     const created = await jsonFetch<ApiThread>(apiUrl("/api/threads"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -141,6 +155,9 @@ export const threadListAdapter: RemoteThreadListAdapter = {
           },
         );
         controller.appendText(title);
+        // El endpoint persiste el título server-side; refrescamos el store del
+        // sidebar para que deje de mostrar "Nueva conversación".
+        await reloadThreadList();
       } catch (e) {
         console.warn("[threadListAdapter.generateTitle] fallo:", e);
       }
