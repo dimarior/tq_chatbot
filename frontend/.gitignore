@@ -4,3 +4,7 @@ node_modules
 .env.*.local
 .DS_Store
 *.tsbuildinfo
+test-results
+playwright-report
+.claude
+skills-lock.json
