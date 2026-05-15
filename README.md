@@ -82,6 +82,51 @@ sequenceDiagram
     TH->>PG: INSERT messages (citas en columna JSONB)
 ```
 
+## Flujo del frontend
+
+El frontend usa [assistant-ui](https://www.assistant-ui.com/) como conjunto de primitivos de chat y le enchufa tres adaptadores propios, más un store lateral para las citas:
+
+| Pieza | Tipo assistant-ui | Responsabilidad |
+|---|---|---|
+| `lib/tqChatAdapter.ts` | `ChatModelAdapter` | Llama a `/api/chat`, parsea el SSE y emite el contenido acumulado del modelo. |
+| `lib/threadHistoryAdapter.ts` | `ThreadHistoryAdapter` | Persiste (`append`) e hidrata (`load`) los mensajes de un hilo vía `/api/threads/*`. |
+| `lib/threadListAdapter.tsx` | `RemoteThreadListAdapter` | Lista, crea, renombra, archiva y **titula** hilos en el sidebar. |
+| `lib/sourcesStore.ts` | Zustand (canal lateral) | Mapa `messageId → Source[]`. Las citas no viajan en el content stream del modelo. |
+
+Flujo de información de un turno, en versión resumida:
+
+```mermaid
+sequenceDiagram
+    actor U as Usuario
+    participant FE as Frontend<br/>(assistant-ui + adapters)
+    participant API as Backend
+
+    U->>FE: Envía mensaje
+    FE->>API: POST /api/threads/{id}/messages (guarda turno del usuario)
+    FE->>API: POST /api/chat (question, history)
+    API-->>FE: SSE sources, tokens, done
+    Note over FE: Pinta la respuesta token a token y guarda las citas en sourcesStore
+    FE->>API: POST /api/threads/{id}/messages (guarda respuesta + citas)
+    FE->>API: POST /api/threads/{id}/title (solo en el primer turno)
+    API-->>FE: Titulo generado por Ollama
+    Note over FE: Refresca el sidebar con el titulo
+```
+
+### Generación del título del hilo
+
+Un hilo nuevo nace como `"Nueva conversación"` — es lo que devuelven `initialize`/`create_thread`. El título "real" llega después, por un canal separado del chat:
+
+1. Tras completarse el primer intercambio, assistant-ui llama a `threadListAdapter.generateTitle(remoteId, messages)`.
+2. Ese método hace `POST /api/threads/{id}/title` con los primeros mensajes del hilo.
+3. El backend (`routers/threads.py` → `generate_title`) le pide a **Ollama** un título corto (máx. 6 palabras, español), lo limpia de comillas/prefijos y lo **persiste** con un `UPDATE conversations`.
+4. El frontend recibe el título y llama a `reloadThreadList()` para que el sidebar deje de mostrar "Nueva conversación".
+
+Es decir: el titulado **no** lo hace el endpoint de chat ni el `ChatModelAdapter` — es responsabilidad del `RemoteThreadListAdapter` y ocurre una sola vez, al final del primer turno.
+
+### Hidratación al abrir un hilo
+
+Al abrir o recargar un hilo, `MyRuntimeProvider` remonta el `RuntimeScope` con el `threadId` de la URL, el `ThreadHistoryAdapter.load()` pide `GET /api/threads/{id}/messages`, re-hidrata el `sourcesStore` con `bulkSet` y devuelve el repositorio de mensajes que assistant-ui renderiza.
+
 ## Prerrequisitos
 
 - Docker Desktop con >= 8 GB asignados (recomendado 12 GB)
@@ -196,27 +241,16 @@ La funcion `get_structured_data(question)` en `apps/api/tools/structured_tool.py
 
 El endpoint `apps/api/routers/chat_v2.py` implementa el agente enrutador. En cada turno, la funcion `needs_structured_tool(question)` analiza la pregunta por palabras clave y decide la ruta:
 
-```
-Pregunta del usuario
-        |
-        v
-needs_structured_tool()
-        |
-   SI (telefono, horario,     NO (historia, productos,
-   NIT, sede, marcas...)      cultura, innovacion...)
-        |                            |
-        v                            v
-Herramienta estructurada        RAG pgvector
-(datos_estructurados.json)      (top-k coseno)
-        |                            |
-        +------------+---------------+
-                     |
-                     v
-              Qwen3-8B (Ollama)
-              genera respuesta
-                     |
-                     v
-           PostgreSQL (memoria)
+```mermaid
+flowchart TD
+    Q([Pregunta del usuario]) --> R{needs_structured_tool}
+
+    R -->|Sí — teléfono, horario,<br/>NIT, sede, marcas...| ST[Herramienta estructurada<br/>datos_estructurados.json]
+    R -->|No — historia, productos,<br/>cultura, innovación...| RAG[RAG pgvector<br/>recuperación top-k coseno]
+
+    ST --> LLM[Qwen3-8B vía Ollama<br/>genera la respuesta]
+    RAG --> LLM
+    LLM --> DB[(PostgreSQL<br/>persistencia del hilo)]
 ```
 
 ## Pruebas de Validación del Agente
