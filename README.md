@@ -32,6 +32,56 @@ Chatbot RAG sobre Tecnoquímicas S.A. - backend en FastAPI, modelo local Qwen3-8
 
 Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Cómo funciona el sistema
+
+Diagrama de secuencia de un turno de conversación, desde que el usuario escribe hasta que la respuesta queda persistida. El agente enruta cada pregunta a una de dos herramientas y el streaming SSE es independiente de la persistencia de hilos.
+
+```mermaid
+sequenceDiagram
+    actor U as Usuario
+    participant FE as Frontend<br/>(assistant-ui + tqChatAdapter)
+    participant API as FastAPI<br/>POST /api/chat
+    participant RT as Router<br/>needs_structured_tool()
+    participant ST as Herramienta estructurada<br/>datos_estructurados.json
+    participant RAG as RAG retriever
+    participant PG as Postgres + pgvector
+    participant OL as Ollama<br/>Qwen3-8B
+    participant TH as Threads API<br/>/api/threads/*
+
+    U->>FE: Escribe pregunta
+    FE->>API: POST /api/chat {question, history}
+    API->>RT: ¿La pregunta necesita datos estructurados?
+
+    alt Ruta A — datos concretos (teléfono, NIT, horario, sedes...)
+        RT-->>API: sí
+        API->>ST: get_structured_data(question)
+        ST-->>API: dato exacto y verificado
+        API-->>FE: SSE event: sources (datos_estructurados.json)
+    else Ruta B — pregunta abierta (historia, productos, cultura...)
+        RT-->>API: no
+        API->>RAG: retrieve(question, k=TOP_K)
+        RAG->>OL: embed(question)
+        OL-->>RAG: vector(1024)
+        RAG->>PG: búsqueda HNSW coseno top-k
+        PG-->>RAG: chunks + score
+        RAG-->>API: chunks filtrados por min_score
+        API-->>FE: SSE event: sources (URLs citadas)
+    end
+
+    API->>OL: stream_chat(system_prompt, user_prompt, history)
+    loop por cada token generado
+        OL-->>API: token
+        API-->>FE: SSE event: token
+        FE-->>U: Render incremental de la respuesta
+    end
+    API-->>FE: SSE event: done
+
+    Note over FE,PG: Persistencia — desacoplada del stream de /api/chat
+    FE->>TH: POST /api/threads/{id}/messages (turno del usuario)
+    FE->>TH: POST /api/threads/{id}/messages (turno del asistente + sources)
+    TH->>PG: INSERT messages (citas en columna JSONB)
+```
+
 ## Prerrequisitos
 
 - Docker Desktop con >= 8 GB asignados (recomendado 12 GB)
