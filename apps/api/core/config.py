@@ -8,6 +8,9 @@ class Settings(BaseSettings):
 
     ollama_host: str = "http://localhost:11434"
     llm_model: str = "qwen3:8b"
+    # Modelo opcional para el nodo `classify` del grafo. Si queda vacío,
+    # cae al llm_model. Útil para bajar a qwen3:1.7b y acelerar el routing.
+    llm_router_model: str = ""
 
     embed_model: str = "qwen3-embedding:0.6b"
 
@@ -33,6 +36,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def router_model(self) -> str:
+        return self.llm_router_model.strip() or self.llm_model
 
 
 @lru_cache
