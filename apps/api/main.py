@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apps.api.core.config import get_settings
 from apps.api.core.db import create_pool
 from apps.api.llm.ollama_client import OllamaClient
+from apps.api.rag.corpus_stats import compute_corpus_stats
 from apps.api.rag.embeddings import build_embedder
 from apps.api.routers import chat_v2, health, threads
 
@@ -19,6 +20,11 @@ async def lifespan(app: FastAPI):
     app.state.pool = await create_pool(settings)
     app.state.embedder = build_embedder(settings)
     app.state.ollama = OllamaClient(settings.ollama_host, settings.llm_model)
+    # Conteo agregado del corpus, calculado una vez al arranque. Preguntas como
+    # "¿cuántos artículos científicos hay?" son agregadas, no semánticas: el RAG
+    # no las puede responder desde los top-k chunks. Se refresca al reiniciar la
+    # API tras re-ingestar.
+    app.state.corpus_stats = await compute_corpus_stats(app.state.pool)
     try:
         yield
     finally:

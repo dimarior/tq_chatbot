@@ -134,9 +134,15 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
                 ]
                 yield _sse(json.dumps(sources, ensure_ascii=False), event="sources")
 
-                # Construir prompt con los chunks recuperados
+                # Construir prompt con los chunks recuperados. Se adjunta el
+                # conteo agregado del corpus (calculado al arranque) para que
+                # el LLM pueda responder preguntas de cantidad que la
+                # recuperación semántica top-k no cubre.
                 user_prompt = build_user_prompt(
-                    payload.question, relevant, settings.max_context_chars
+                    payload.question,
+                    relevant,
+                    settings.max_context_chars,
+                    corpus_note=app.state.corpus_stats.as_prompt_note(),
                 )
 
                 # Generar respuesta con el LLM usando el contexto RAG
