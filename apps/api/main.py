@@ -9,7 +9,7 @@ from apps.api.core.config import get_settings
 from apps.api.core.db import create_pool
 from apps.api.llm.ollama_client import OllamaClient
 from apps.api.rag.embeddings import build_embedder
-from apps.api.routers import chat, health, threads
+from apps.api.routers import chat_v2, health, threads
 
 
 @asynccontextmanager
@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
-    app.include_router(chat.router)
+    app.include_router(chat_v2.router)
     app.include_router(threads.router)
 
     return app
