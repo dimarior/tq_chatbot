@@ -1,11 +1,15 @@
-"""Idempotent ingestion: data/raw/*.json → embeddings → Postgres+pgvector.
+"""Idempotent ingestion: data/raw/*.json → embeddings → Chroma (langchain).
 
 Per-document flow:
-  - Look up `documents.url`. If row exists with the same `content_hash`, skip.
-  - Otherwise, in a single transaction:
-        * UPSERT documents row.
-        * DELETE FROM chunks WHERE document_id = ?.
-        * Split text → embed → bulk-INSERT new chunks.
+  - Buscar en Chroma chunks con `metadata.url == doc.url` y leer su
+    `content_hash`. Si coincide con el del archivo, skip.
+  - En caso contrario:
+        * Borrar los chunks viejos de ese URL en la colección.
+        * Trocear, deduplicar y embebir los chunks nuevos.
+        * Insertarlos con IDs deterministas (uuid5 sobre url#index) para
+          que reingestas posteriores reescriban en lugar de duplicar.
+
+El run es seguro de re-ejecutar: la misma entrada produce la misma colección.
 
 Run:
     uv run python scripts/ingest_to_rag.py [--dry-run] [--only <substring>]
@@ -19,7 +23,6 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid5, NAMESPACE_URL
 
@@ -35,6 +38,15 @@ LOG = logging.getLogger("ingest")
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
+
+
+# La limpieza fuerte ocurre en fetch_sitemaps.py (webclaw --include /
+# --only-main-content). Aquí solo defendemos contra: (1) chunks demasiado
+# cortos para aportar contexto y (2) chunks idénticos entre documentos
+# (footers o separadores que cualquier extractor deja pasar).
+_IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_LINK_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
+_WS_RE = re.compile(r"\s+")
 
 
 def _chunk_quality_ok(chunk: str) -> bool:
@@ -56,19 +68,45 @@ def _chunk_hash(chunk: str) -> str:
     return hashlib.sha256(_WS_RE.sub(" ", chunk.strip().lower()).encode()).hexdigest()
 
 
-async def _ingest_one(
-    ollama_embedder: OllamaEmbeddings,
+def _url_document_id(url: str) -> int:
+    """ID estable para `metadata.document_id`, derivado del URL.
+
+    Mantenemos el campo por compatibilidad con `RetrievedChunk` (consume el
+    api/schemas). El valor concreto no se usa para joinear nada — Chroma
+    ya identifica chunks por su `id` (uuid5).
+    """
+    return int(hashlib.sha1(url.encode()).hexdigest()[:12], 16)
+
+
+def _existing_hash(vector_store: Chroma, url: str) -> str | None:
+    """Devuelve el content_hash registrado para `url` en Chroma, o None."""
+    existing = vector_store.get(where={"url": url}, limit=1, include=["metadatas"])
+    metadatas = existing.get("metadatas") or []
+    if not metadatas:
+        return None
+    return metadatas[0].get("content_hash")
+
+
+def _delete_by_url(vector_store: Chroma, url: str) -> None:
+    """Borra todos los chunks de un URL antes de reinsertar la versión nueva."""
+    rows = vector_store.get(where={"url": url}, include=[])
+    ids = rows.get("ids") or []
+    if ids:
+        vector_store.delete(ids=ids)
+
+
+def _ingest_one(
     vector_store: Chroma,
     splitter: RecursiveCharacterTextSplitter,
     doc: dict,
     dry_run: bool,
     seen_hashes: set[str],
-    settings: get_settings,
 ) -> tuple[str, int]:
     url = doc["url"]
     content_hash = doc["content_hash"]
+    existing_hash = _existing_hash(vector_store, url)
 
-    if existing_hash == doc["content_hash"]:
+    if existing_hash == content_hash:
         return ("unchanged", 0)
 
     if dry_run:
@@ -90,49 +128,43 @@ async def _ingest_one(
     if not unique_chunks:
         return ("empty", 0)
 
-    embeddings = await embedder.embed(unique_chunks)
+    # Limpia los chunks viejos de este URL ANTES de insertar — los IDs
+    # uuid5(url#i) son deterministas, así que `add_documents` reescribiría las
+    # filas con el mismo i, pero si el doc cambió y ahora tiene MENOS chunks,
+    # los sobrantes con índices mayores quedarían huérfanos.
+    _delete_by_url(vector_store, url)
 
-    async with conn.transaction():
-        doc_id = await conn.fetchval(
-            """
-            INSERT INTO documents (url, source, title, content_hash, fetched_at, last_indexed_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (url) DO UPDATE
-                SET source          = EXCLUDED.source,
-                    title           = EXCLUDED.title,
-                    content_hash    = EXCLUDED.content_hash,
-                    fetched_at      = EXCLUDED.fetched_at,
-                    last_indexed_at = EXCLUDED.last_indexed_at
-            RETURNING id
-            """,
-            url,
-            doc["source"],
-            doc.get("title"),
-            doc["content_hash"],
-            datetime.fromisoformat(doc["fetched_at"]),
-            datetime.now(timezone.utc),
+    doc_id = _url_document_id(url)
+    documents = [
+        Document(
+            page_content=txt,
+            metadata={
+                "url": url,
+                "title": doc.get("title"),
+                "source": doc["source"],
+                "content_hash": content_hash,
+                "document_id": doc_id,
+                "chunk_index": i,
+            },
         )
-        await conn.execute("DELETE FROM chunks WHERE document_id=$1", doc_id)
-
-        for i, (txt, vec) in enumerate(zip(unique_chunks, embeddings)):
-            await conn.execute(
-                """
-                INSERT INTO chunks (document_id, chunk_index, content, embedding, metadata)
-                VALUES ($1, $2, $3, $4::vector, $5::jsonb)
-                """,
-                doc_id,
-                i,
-                txt,
-                _vector_literal(vec),
-                json.dumps({"source": doc["source"]}),
-            )
+        for i, txt in enumerate(unique_chunks)
+    ]
+    ids = [str(uuid5(NAMESPACE_URL, f"{url}#{i}")) for i in range(len(unique_chunks))]
+    vector_store.add_documents(documents, ids=ids)
 
     return (("updated" if existing_hash else "inserted"), len(unique_chunks))
 
 
 async def main_async(args: argparse.Namespace) -> int:
     settings = get_settings()
-    embedder = build_embedder(settings)
+    embedder = OllamaEmbeddings(
+        base_url=settings.ollama_host,
+        model=settings.embed_model,
+    )
+    vector_store = Chroma(
+        persist_directory=settings.chroma_path,
+        embedding_function=embedder,
+    )
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
@@ -146,39 +178,42 @@ async def main_async(args: argparse.Namespace) -> int:
         LOG.warning("no files in %s — run fetch_sitemaps.py first", RAW_DIR)
         return 1
 
-    conn = await asyncpg.connect(settings.database_url)
-    try:
-        counts = {"unchanged": 0, "inserted": 0, "updated": 0, "empty": 0,
-                  "would-insert": 0, "would-update": 0}
-        total_chunks = 0
-        # Hashes vistos en esta corrida; evita reembedir/insertar el mismo chunk
-        # en docs distintos (boilerplate del template, "Lo más leído", etc.).
-        seen_hashes: set[str] = set()
-        # Pre-carga hashes ya en BD para que reingestas incrementales no rompan
-        # idempotencia con la versión limpia.
-        if not args.dry_run:
-            rows = await conn.fetch("SELECT content FROM chunks")
-            for r in rows:
-                seen_hashes.add(_chunk_hash(r["content"]))
-            if seen_hashes:
-                LOG.info("preloaded %d existing chunk hashes for dedupe", len(seen_hashes))
+    counts = {
+        "unchanged": 0, "inserted": 0, "updated": 0, "empty": 0,
+        "would-insert": 0, "would-update": 0,
+    }
+    total_chunks = 0
+    # Hashes vistos en esta corrida; evita reembedir/insertar el mismo chunk
+    # en docs distintos (boilerplate del template, "Lo más leído", etc.).
+    seen_hashes: set[str] = set()
+    # Pre-carga los hashes ya en Chroma para que reingestas incrementales no
+    # rompan idempotencia tras un fetch limpio.
+    if not args.dry_run:
+        existing = vector_store.get(include=["documents"])
+        for content in existing.get("documents") or []:
+            seen_hashes.add(_chunk_hash(content))
+        if seen_hashes:
+            LOG.info("preloaded %d existing chunk hashes for dedupe", len(seen_hashes))
 
-        for fp in files:
-            try:
-                doc = json.loads(fp.read_text("utf-8"))
-            except Exception as e:
-                LOG.error("skip %s: %s", fp.name, e)
-                continue
-            kind, n = await _ingest_one(conn, embedder, splitter, doc, args.dry_run, seen_hashes)
-            counts[kind] = counts.get(kind, 0) + 1
-            total_chunks += n
-            LOG.info("%-13s %s (%d chunks)", kind, doc["url"], n)
+    for fp in files:
+        try:
+            doc = json.loads(fp.read_text("utf-8"))
+        except Exception as e:
+            LOG.error("skip %s: %s", fp.name, e)
+            continue
+        # La llamada al embedder ocurre dentro de add_documents (sync). El
+        # cliente HTTP de OllamaEmbeddings es bloqueante, así que ejecutamos
+        # _ingest_one en un thread para no bloquear el event loop si el
+        # script crece y se le piden cosas en paralelo.
+        kind, n = await asyncio.to_thread(
+            _ingest_one, vector_store, splitter, doc, args.dry_run, seen_hashes
+        )
+        counts[kind] = counts.get(kind, 0) + 1
+        total_chunks += n
+        LOG.info("%-13s %s (%d chunks)", kind, doc["url"], n)
 
-        LOG.info("summary: %s | total_chunks_written=%d", counts, total_chunks)
-        return 0
-    finally:
-        await embedder.aclose()
-        await conn.close()
+    LOG.info("summary: %s | total_chunks_written=%d", counts, total_chunks)
+    return 0
 
 
 def main() -> int:

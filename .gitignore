@@ -38,3 +38,6 @@ postgres_data/
 *.log
 tq_chatbot/Laboratorio1_IA_CD/
 tq_chatbot/tq-chatbot/
+
+# Vector store local (Chroma)
+chroma_db/
