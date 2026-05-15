@@ -6,6 +6,7 @@ import { apiUrl } from "./api";
 import { useActiveThreadIdStore } from "./activeThreadIdStore";
 import { flattenContent, type Role } from "./messages";
 import { parseSSE } from "./sse";
+import { useSettingsStore } from "./settingsStore";
 import { useSourcesStore } from "./sourcesStore";
 import type { Source } from "./types";
 
@@ -37,6 +38,7 @@ export const tqChatAdapter: ChatModelAdapter = {
     }
 
     const threadId = useActiveThreadIdStore.getState().threadId;
+    const { temperature, topK } = useSettingsStore.getState();
 
     const res = await fetch(apiUrl("/api/chat"), {
       method: "POST",
@@ -44,7 +46,7 @@ export const tqChatAdapter: ChatModelAdapter = {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify({ question, history, thread_id: threadId }),
+      body: JSON.stringify({ question, history, thread_id: threadId, temperature, top_k: topK }),
       signal: abortSignal,
     });
 

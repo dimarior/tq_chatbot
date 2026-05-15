@@ -20,6 +20,8 @@ class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     history: list[ChatMessage] = Field(default_factory=list)
     thread_id: UUID | None = None
+    temperature: float = Field(default=0.2, ge=0.0, le=1.0)
+    top_k: int = Field(default=6, ge=1, le=10)
 
 
 class Source(BaseModel):

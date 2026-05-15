@@ -136,7 +136,8 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
 
                 # Generar respuesta con el LLM usando los datos estructurados
                 async for token in ollama.stream_chat(
-                    STRUCTURED_RESPONSE_SYSTEM, user_prompt, history=history
+                    STRUCTURED_RESPONSE_SYSTEM, user_prompt, history=history,
+                    temperature=payload.temperature,
                 ):
                     yield _sse(token, event="token")
 
@@ -145,7 +146,7 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
                 # Para preguntas abiertas sobre la empresa, historia, productos, etc.
                 # Recupera chunks relevantes por similitud coseno desde pgvector.
 
-                chunks = await retrieve(pool, embedder, payload.question, k=settings.top_k)
+                chunks = await retrieve(pool, embedder, payload.question, k=payload.top_k)
 
                 # Filtrar ruido semantico: chunks bajo el umbral no aportan contexto
                 relevant = [c for c in chunks if c.score >= settings.min_score]
@@ -169,7 +170,8 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
 
                 # Generar respuesta con el LLM usando el contexto RAG
                 async for token in ollama.stream_chat(
-                    SYSTEM_PROMPT, user_prompt, history=history
+                    SYSTEM_PROMPT, user_prompt, history=history,
+                    temperature=payload.temperature,
                 ):
                     yield _sse(token, event="token")
 
