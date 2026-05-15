@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml ./
 RUN uv pip install --system --no-cache \
         fastapi 'uvicorn[standard]' pydantic pydantic-settings \
-        asyncpg pgvector httpx python-dotenv langchain-text-splitters tenacity
+        asyncpg httpx python-dotenv tenacity \
+        langchain-text-splitters langchain-community chromadb
 
 COPY apps ./apps
 

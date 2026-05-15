@@ -5,7 +5,7 @@ install:
 
 # ── Desarrollo (levanta todo) ─────────────────
 dev:
-	docker-compose up -d
+	docker compose up -d
 	uv run uvicorn apps.api.main:app --reload --port 8000 &
 	cd frontend && pnpm dev
 
@@ -19,7 +19,7 @@ frontend:
 
 # ── Base de datos ─────────────────────────────
 db:
-	docker-compose up -d
+	docker compose up -d
 
 # ── Limpiar cache ─────────────────────────────
 clean:
@@ -28,4 +28,4 @@ clean:
 
 # ── Ver logs ──────────────────────────────────
 logs:
-	docker-compose logs -f
+	docker compose logs -f

@@ -6,28 +6,30 @@ Chatbot RAG sobre Tecnoquímicas S.A. - backend en FastAPI, modelo local Qwen3-8
 
 ## Objetivos
 
-1. **RAG real**: vector search con HNSW + cosine sobre chunks embebidos, citando fuentes en cada respuesta.
-2. **100 % local**: LLM, embeddings y BD corren en la máquina del desarrollador (M1 Pro 16 GB target).
+1. **RAG real**: vector search sobre chunks embebidos en Chroma, citando fuentes en cada respuesta.
+2. **100 % local**: LLM, embeddings y vector store corren en la máquina del desarrollador (M1 Pro 16 GB target).
 3. **Reproducible**: `docker compose up` levanta todo. Sin "funciona en mi máquina".
-4. **Pipeline manual e idempotente**: dos scripts (`fetch_sitemaps.py`, `ingest_to_rag.py`) se ejecutan a mano, pueden re-correrse sin efectos secundarios.
+4. **Pipeline manual e idempotente**: dos scripts (`fetch_sitemaps.py`, `ingest_to_rag.py`) se ejecutan a mano, pueden re-correrse sin efectos secundarios (IDs deterministas vía `uuid5(NAMESPACE_URL, "<url>#<idx>")`).
 5. **Agente con router**: el sistema decide en cada turno entre herramienta RAG o herramienta de datos estructurados segun la naturaleza de la pregunta.
+6. **Memoria por hilo**: cuando el cliente envía `thread_id`, el backend reconstruye el historial desde la tabla `messages` antes de invocar al LLM.
 
 ## Stack
 
 | Capa | Tecnología |
 |---|---|
 | Runtime | Python 3.12, `uv` |
-| API | FastAPI + Pydantic v2 + asyncpg |
-| LLM | Qwen3-8B-Instruct vía Ollama |
-| Embeddings | Qwen3-Embedding-0.6B (1024 dim) |
-| Vector DB | PostgreSQL 16 + pgvector (HNSW, cosine) |
+| API | FastAPI + Pydantic v2 |
+| LLM | Qwen3-8B-Instruct vía Ollama (`apps/api/llm/ollama_client.py`) |
+| Embeddings | Qwen3-Embedding-0.6B vía `langchain-community` `OllamaEmbeddings` |
+| Vector DB | Chroma persistente (`./chroma_db/`, `langchain-community.vectorstores.Chroma`) |
+| Persistencia de hilos | PostgreSQL 16 (`conversations`, `messages`) + asyncpg |
 | Scraping | [webclaw](https://github.com/0xMassi/webclaw) (Rust CLI) - `brew install` |
 | Chunking | LangChain `RecursiveCharacterTextSplitter` |
 | Frontend | Next.js 15 (App Router) + React 19 + [assistant-ui](https://www.assistant-ui.com/) + Tailwind 3 |
 | Streaming | SSE (Server-Sent Events) - parser custom dentro del `ChatModelAdapter` |
-| Persistencia de chat | Postgres (`conversations`, `messages`) - hilos compartidos sin auth |
 | Herramienta estructurada | `datos_estructurados.json` + `structured_tool.py` |
 | Router / Agente | `needs_structured_tool()` en `chat_v2.py` |
+| Panel de parámetros | Sliders de `temperature` y `top_k` por turno (`SettingsPanel.tsx`) |
 | Infra | docker-compose |
 
 Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -44,12 +46,15 @@ sequenceDiagram
     participant RT as Router<br/>needs_structured_tool()
     participant ST as Herramienta estructurada<br/>datos_estructurados.json
     participant RAG as RAG retriever
-    participant PG as Postgres + pgvector
+    participant CH as Chroma<br/>./chroma_db/
     participant OL as Ollama<br/>Qwen3-8B
+    participant PG as Postgres<br/>messages (memoria)
     participant TH as Threads API<br/>/api/threads/*
 
     U->>FE: Escribe pregunta
-    FE->>API: POST /api/chat {question, history}
+    FE->>API: POST /api/chat {question, thread_id, temperature, top_k}
+    API->>PG: SELECT messages WHERE conversation_id=thread_id (memoria)
+    PG-->>API: history del hilo
     API->>RT: ¿La pregunta necesita datos estructurados?
 
     alt Ruta A — datos concretos (teléfono, NIT, horario, sedes...)
@@ -59,16 +64,16 @@ sequenceDiagram
         API-->>FE: SSE event: sources (datos_estructurados.json)
     else Ruta B — pregunta abierta (historia, productos, cultura...)
         RT-->>API: no
-        API->>RAG: retrieve(question, k=TOP_K)
+        API->>RAG: retrieve(question, k=top_k, min_score)
         RAG->>OL: embed(question)
-        OL-->>RAG: vector(1024)
-        RAG->>PG: búsqueda HNSW coseno top-k
-        PG-->>RAG: chunks + score
-        RAG-->>API: chunks filtrados por min_score
+        OL-->>RAG: vector
+        RAG->>CH: similarity_search_with_score top-k (L2)
+        CH-->>RAG: chunks + distancia
+        RAG-->>API: chunks con score = 1/(1+L2), filtrados por min_score
         API-->>FE: SSE event: sources (URLs citadas)
     end
 
-    API->>OL: stream_chat(system_prompt, user_prompt, history)
+    API->>OL: stream_chat(system_prompt, user_prompt, history, temperature)
     loop por cada token generado
         OL-->>API: token
         API-->>FE: SSE event: token
@@ -190,13 +195,14 @@ curl http://localhost:8000/api/health
 ```
 .
 +-- apps/api/              FastAPI app
-|   +-- core/              config + db pool
-|   +-- routers/           /api/chat (SSE), /api/health, /api/threads (persistencia)
-|   |   +-- chat_v2.py     endpoint con router agente
-|   +-- rag/               embeddings, retriever, prompt
-|   +-- llm/               Ollama client
+|   +-- core/              config + Postgres pool
+|   +-- routers/           /api/chat (SSE), /api/health, /api/threads (persistencia UI)
+|   |   +-- chat_v2.py     endpoint con router agente + memoria por thread_id
+|   +-- rag/               retriever (Chroma), prompt, corpus_stats
+|   +-- llm/               cliente Ollama (streaming + completar)
 |   +-- tools/             herramienta de datos estructurados
 |   +-- datos_estructurados.json   datos exactos de TQ
++-- chroma_db/             persist directory de Chroma (gitignored, generado por ingest)
 +-- frontend/              Next.js + assistant-ui
 |   +-- app/               layout + page (sidebar + chat)
 |   +-- components/        ThreadList, Thread, Composer, Messages, SourcesFooter
@@ -216,11 +222,12 @@ Ver `.env.example`. Las más importantes:
 | Variable | Default | Notas |
 |---|---|---|
 | `LLM_MODEL` | `qwen3:8b` | Cambiar a `qwen3:4b` si tienes < 12 GB de RAM. |
-| `EMBED_MODEL` | `qwen3-embedding:0.6b` | Si Ollama no tiene el tag, usar `EMBED_BACKEND=sentence-transformers`. |
-| `EMBED_DIMS` | `1024` | Debe coincidir con el modelo. Cambiar requiere reset del RAG. |
-| `TOP_K` | `6` | Chunks recuperados por consulta. |
-| `OLLAMA_HOST` | `http://ollama:11434` | Dentro de Docker. Para correr scripts desde host: `http://localhost:11434`. |
-| `DATABASE_URL` | `postgresql://tq:tq@postgres:5432/tq` | Idem - usar `localhost` desde host. |
+| `EMBED_MODEL` | `qwen3-embedding:0.6b` | Ollama debe tener el tag descargado (`ollama pull qwen3-embedding:0.6b`). |
+| `TOP_K` | `6` | Chunks recuperados por consulta (override per-request desde el slider del frontend). |
+| `MIN_SCORE` | `0.40` | Umbral de relevancia tras transformar L2 → `1/(1+L2)`. Recalibrar tras reingestar. |
+| `CHROMA_PATH` | `./chroma_db` | Persist directory de Chroma. Compartido entre host y contenedor vía bind mount. |
+| `OLLAMA_HOST` | `http://host.docker.internal:11434` | Dentro de Docker (Ollama nativo en macOS). Desde host: `http://localhost:11434`. |
+| `DATABASE_URL` | `postgresql://tq:tq@postgres:5432/tq` | Postgres sólo guarda `conversations` y `messages` — el RAG vive en Chroma. Usa `localhost` desde host. |
 
 ## Herramienta de Datos Estructurados
 

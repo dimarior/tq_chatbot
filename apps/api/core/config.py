@@ -9,10 +9,7 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     llm_model: str = "qwen3:8b"
 
-    embed_backend: str = "ollama"
     embed_model: str = "qwen3-embedding:0.6b"
-    embed_dims: int = 1024
-    embed_timeout: int = 120
 
     database_url: str = "postgresql://tq:tq@localhost:5432/tq"
 
@@ -21,12 +18,12 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:8000,http://localhost:3000"
 
     top_k: int = 6
-    # Coseno mínimo para considerar un chunk relevante. Por debajo, se descarta
-    # del contexto del LLM y de los chips de fuentes del widget. 0.50 calibrado
-    # al corpus actual (los mejores scores reales rondan 0.51-0.58). Subirlo
-    # requiere primero limpiar el ruido de ingesta (chunks con boilerplate
-    # duplicado producen embeddings casi idénticos).
-    min_score: float = 0.50
+    # Score mínimo (0–1, mayor = más similar) para considerar un chunk
+    # relevante. El retriever transforma la distancia L2 de Chroma a
+    # 1/(1+L2), así que esta escala NO es similitud coseno: hay que
+    # recalibrar mirando los scores reales del corpus tras cada reingest.
+    # 0.40 es un punto de partida; ajustar según los logs de retrieve().
+    min_score: float = 0.40
     chunk_size: int = 600
     chunk_overlap: int = 100
     max_context_chars: int = 6000

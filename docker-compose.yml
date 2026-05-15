@@ -34,19 +34,18 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       DATABASE_URL: postgresql://tq:tq@postgres:5432/tq
       LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
-      # Fijado a ollama: la imagen del API no incluye sentence-transformers/torch.
-      # Los scripts de ingesta en host SÍ usan sentence-transformers vía .env (más rápido en batch).
-      # Ambos backends cargan el mismo Qwen3-Embedding-0.6B → vectores compatibles bajo coseno.
-      EMBED_BACKEND: ollama
-      EMBED_MODEL: qwen3-embedding:0.6b
-      EMBED_DIMS: ${EMBED_DIMS:-1024}
+      EMBED_MODEL: ${EMBED_MODEL:-qwen3-embedding:0.6b}
       TOP_K: ${TOP_K:-6}
+      MIN_SCORE: ${MIN_SCORE:-0.40}
+      CHROMA_PATH: ${CHROMA_PATH:-./chroma_db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000,http://localhost:3000}
     ports:
       - "8000:8000"
     volumes:
       - ./apps:/app/apps:ro
+      # Persist directory de Chroma — se monta para que el API contenedorizado
+      # vea los chunks que el host indexó con scripts/ingest_to_rag.py.
+      - ./chroma_db:/app/chroma_db
 
 volumes:
   postgres_data:
-  ollama_data:
