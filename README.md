@@ -25,10 +25,13 @@ Chatbot RAG sobre Tecnoquímicas S.A. - backend en FastAPI, modelo local Qwen3-8
 | Persistencia de hilos | PostgreSQL 16 (`conversations`, `messages`) + asyncpg |
 | Scraping | [webclaw](https://github.com/0xMassi/webclaw) (Rust CLI) - `brew install` |
 | Chunking | LangChain `RecursiveCharacterTextSplitter` |
+| Orquestación | LangGraph `StateGraph` con 4 nodos (`apps/api/graph/`) |
+| Memoria por hilo | `AsyncPostgresSaver` — checkpoints keyed por `thread_id` |
+| Monitoreo | LangSmith (opcional, vía env vars `LANGSMITH_*`) |
 | Frontend | Next.js 15 (App Router) + React 19 + [assistant-ui](https://www.assistant-ui.com/) + Tailwind 3 |
 | Streaming | SSE (Server-Sent Events) - parser custom dentro del `ChatModelAdapter` |
 | Herramienta estructurada | `datos_estructurados.json` + `structured_tool.py` |
-| Router / Agente | `needs_structured_tool()` en `chat_v2.py` |
+| Router / Agente | `classify` node con `ChatOllama.with_structured_output(RouteDecision)` |
 | Panel de parámetros | Sliders de `temperature` y `top_k` por turno (`SettingsPanel.tsx`) |
 | Infra | docker-compose |
 
@@ -227,7 +230,54 @@ Ver `.env.example`. Las más importantes:
 | `MIN_SCORE` | `0.40` | Umbral de relevancia tras transformar L2 → `1/(1+L2)`. Recalibrar tras reingestar. |
 | `CHROMA_PATH` | `./chroma_db` | Persist directory de Chroma. Compartido entre host y contenedor vía bind mount. |
 | `OLLAMA_HOST` | `http://host.docker.internal:11434` | Dentro de Docker (Ollama nativo en macOS). Desde host: `http://localhost:11434`. |
-| `DATABASE_URL` | `postgresql://tq:tq@postgres:5432/tq` | Postgres sólo guarda `conversations` y `messages` — el RAG vive en Chroma. Usa `localhost` desde host. |
+| `DATABASE_URL` | `postgresql://tq:tq@postgres:5432/tq` | Postgres guarda `conversations`, `messages` (UI) y los `checkpoints` de LangGraph (memoria del grafo). Usa `localhost` desde host. |
+| `LLM_ROUTER_MODEL` | _vacío_ | Modelo opcional para el nodo `classify`. Si vacío, usa `LLM_MODEL`. Útil para bajar a `qwen3:1.7b` y acelerar el routing. |
+| `LANGSMITH_TRACING` | `false` | Setear `true` para enviar traces a LangSmith. Requiere también `LANGSMITH_API_KEY`. |
+| `LANGSMITH_API_KEY` | _vacío_ | API key de LangSmith. Sin esto, el tracing queda apagado aunque `LANGSMITH_TRACING=true`. |
+| `LANGSMITH_PROJECT` | `tq-chatbot` | Nombre del proyecto en LangSmith donde aparecen los traces. |
+| `LANGSMITH_ENDPOINT` | `https://api.smith.langchain.com` | Sobrescribir sólo para self-hosted. |
+
+## LangGraph + LangSmith
+
+La orquestación del agente (router, retrieval, generación y memoria por hilo) está implementada como un `StateGraph` de LangGraph en `apps/api/graph/`:
+
+| Archivo | Rol |
+|---|---|
+| `apps/api/graph/state.py` | `ChatState` (TypedDict con reductor `add_messages`) y `RouteDecision` (Pydantic, salida del clasificador). |
+| `apps/api/graph/llm.py` | Fábricas de `ChatOllama` para el LLM principal y el clasificador del router. |
+| `apps/api/graph/nodes.py` | `classify`, `structured`, `retrieve`, `generate` + función de la conditional edge. |
+| `apps/api/graph/build.py` | Ensambla el `StateGraph` y compila con el checkpointer. |
+
+```mermaid
+flowchart TD
+    START([START]) --> CL[classify_node<br/>ChatOllama.with_structured_output]
+    CL -->|route=structured| ST[structured_node]
+    CL -->|route=rag| RT[retrieve_node<br/>Chroma.similarity_search]
+    ST --> GN[generate_node<br/>ChatOllama.astream]
+    RT --> GN
+    GN --> END([END])
+```
+
+**Memoria por hilo.** `AsyncPostgresSaver` corre `setup()` la primera vez y crea las tablas `checkpoints`, `checkpoint_blobs` y `checkpoint_writes` en la misma base de datos que `conversations`/`messages` (responsabilidades distintas: las primeras son estado del grafo; las segundas son lo que renderiza la UI). Cada turno se invoca el grafo con `configurable={"thread_id": <uuid>}`; LangGraph carga el estado previo, ejecuta los nodos y guarda el nuevo state. El reductor `add_messages` del campo `messages` se encarga del append idempotente.
+
+**Tracing con LangSmith.** Es 100% configurado por variables de entorno: el lifespan de `apps/api/main.py` exporta `LANGSMITH_*` a `os.environ` antes de importar `langgraph`. Setup:
+
+```bash
+# 1. Obtener API key en https://smith.langchain.com (cuenta gratis).
+# 2. Setear en .env o en el shell:
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=lsv2_pt_xxx
+export LANGSMITH_PROJECT=tq-chatbot
+
+# 3. Reiniciar el stack para que el lifespan recoja las variables.
+docker compose up -d --force-recreate api
+
+# 4. Hacer una pregunta desde el frontend e ir al proyecto `tq-chatbot`
+#    en LangSmith: verás el trace classify → (structured|retrieve) → generate
+#    con cada llamada a Ollama anidada.
+```
+
+Cuando `LANGSMITH_TRACING=false` o falta la API key, el grafo corre sin enviar nada al servicio externo — útil en CI o desarrollo offline.
 
 ## Herramienta de Datos Estructurados
 

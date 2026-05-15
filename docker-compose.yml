@@ -34,11 +34,17 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       DATABASE_URL: postgresql://tq:tq@postgres:5432/tq
       LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
+      LLM_ROUTER_MODEL: ${LLM_ROUTER_MODEL:-}
       EMBED_MODEL: ${EMBED_MODEL:-qwen3-embedding:0.6b}
       TOP_K: ${TOP_K:-6}
       MIN_SCORE: ${MIN_SCORE:-0.40}
       CHROMA_PATH: ${CHROMA_PATH:-./chroma_db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000,http://localhost:3000}
+      # LangSmith tracing — el grafo emite traces sólo cuando ambos están seteados.
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-tq-chatbot}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
     ports:
       - "8000:8000"
     volumes:

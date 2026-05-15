@@ -11,8 +11,9 @@ This is a clean rewrite (2026-05). The previous Streamlit/Gemini pipeline was de
 ## Layout
 
 ```
-apps/api/        FastAPI service (core/, routers/, rag/, llm/)
-                   routers: chat_v2 (SSE), health, threads (persistencia de hilos)
+apps/api/        FastAPI service (core/, routers/, rag/, llm/, graph/)
+                   routers: chat_v2 (SSE — traduce graph.astream a SSE), health, threads
+                   graph/   → StateGraph: classify → (structured|retrieve) → generate
                    rag/retriever.py → wrap thin sobre Chroma.similarity_search_with_score
                    rag/corpus_stats.py → cuenta noticias en la metadata de Chroma
 frontend/        Next.js + assistant-ui (app/, components/, lib/)
@@ -50,7 +51,8 @@ Health: `curl http://localhost:8000/api/health`. UI: `http://localhost:3000`.
 - **Single vector store: Chroma local persistente.** El cliente vive en `app.state.vector_store` (creado en `main.py` con `embedding_function=OllamaEmbeddings(...)`). La recuperación usa `similarity_search_with_score` que devuelve distancia L2; el retriever la transforma a `1/(1+L2)` para que `min_score` siga teniendo semántica "mayor = más relevante". Recalibrar `settings.min_score` tras cambiar el modelo de embedding o el corpus.
 - **Postgres ya no participa en RAG.** Las tablas `documents` y `chunks` siguen creándose por `migrations/001_init.sql` (legacy) pero NO se consultan. Postgres sólo guarda `conversations` y `messages` (memoria persistente del hilo). Si tocas el ingest o el retriever, asume Chroma — no añadas SQL a esa ruta.
 - **Streaming via SSE.** `POST /api/chat` returns `text/event-stream` with three event types: `sources` (JSON array), `token` (raw text), `done` (plus `error` on failure). The Next.js frontend consumes it inside `lib/tqChatAdapter.ts` via fetch + a manual SSE parser (`lib/sse.ts`). El payload incluye `thread_id` (opcional) y `temperature`/`top_k` (por turno, controlados por el `SettingsPanel`).
-- **Memoria por hilo.** Si el cliente envía `thread_id`, `chat_v2.py` carga el historial completo desde `messages` antes de invocar al LLM (función `_load_history_from_db`). Sin `thread_id`, modo stateless con `payload.history`. El cliente sigue persistiendo cada turno vía `POST /api/threads/{id}/messages` para que la UI lo pueda re-hidratar.
+- **Memoria por hilo via checkpointer.** `AsyncPostgresSaver` mantiene el state del grafo en las tablas `checkpoints*` (creadas por `checkpointer.setup()` al arranque, idempotente). El endpoint sólo necesita pasar `configurable={"thread_id": ...}`; el reductor `add_messages` se encarga de acumular. El cliente sigue persistiendo cada turno vía `POST /api/threads/{id}/messages` para que la UI lo re-hidrate al recargar — son dos capas con responsabilidades distintas: checkpoints = estado del grafo, messages = vista de la UI.
+- **Monitoreo via LangSmith.** Set `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` y cada nodo del grafo + cada llamada LangChain interna se traza automáticamente, sin instrumentación manual. El lifespan re-exporta los settings a `os.environ` antes de importar `langgraph`.
 - **Sources en el frontend van por un canal aparte.** El stream SSE empuja un evento `sources` con `Source[]`; `tqChatAdapter` las guarda en `useSourcesStore` keyed por `assistantId`. El `threadHistoryAdapter` re-hidrata el store al abrir un hilo. No mezclar las citas con el content stream del modelo.
 - **Spanish prompts.** `apps/api/rag/prompt.py` — keep system prompt in Spanish, keep the TOTAL/PARCIAL/NULA/SENSIBLE protocol, never expose the protocol to the user. Sensitive topics (recalls, litigation, salud) must redirect to official channels.
 - **No tests in v1.** Manual smoke per README quickstart.
