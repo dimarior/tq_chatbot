@@ -24,7 +24,6 @@ import {
   threadListAdapter,
 } from "@/lib/threadListAdapter";
 import { tqChatAdapter } from "@/lib/tqChatAdapter";
-import { useActiveThreadIdStore } from "@/lib/activeThreadIdStore";
 
 const UUID_RE =
   /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
@@ -95,11 +94,6 @@ function RuntimeScope({
     adapter: threadListAdapter,
     threadId,
   });
-
-  // Sincronizar threadId al store para que tqChatAdapter lo envie al backend
-  useEffect(() => {
-    useActiveThreadIdStore.getState().setThreadId(threadId ?? null);
-  }, [threadId]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
