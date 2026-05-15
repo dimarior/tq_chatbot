@@ -33,6 +33,17 @@ class Settings(BaseSettings):
 
     chroma_path: str = "./chroma_db"
 
+    # LangSmith tracing — sólo se activa cuando langsmith_tracing=true Y
+    # langsmith_api_key está poblada. Los vars con prefijo LANGSMITH_ son los
+    # nombres canónicos que langgraph/langchain leen por sí solos; este
+    # Settings los re-exporta a os.environ desde el lifespan para que el
+    # cliente de tracing los recoja antes de que se importe cualquier nodo
+    # del grafo.
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "tq-chatbot"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
