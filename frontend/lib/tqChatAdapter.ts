@@ -3,6 +3,7 @@
 import type { ChatModelAdapter } from "@assistant-ui/react";
 
 import { apiUrl } from "./api";
+import { useActiveThreadIdStore } from "./activeThreadIdStore";
 import { flattenContent, type Role } from "./messages";
 import { parseSSE } from "./sse";
 import { useSourcesStore } from "./sourcesStore";
@@ -35,13 +36,15 @@ export const tqChatAdapter: ChatModelAdapter = {
       if (wire) history.push(wire);
     }
 
+    const threadId = useActiveThreadIdStore.getState().threadId;
+
     const res = await fetch(apiUrl("/api/chat"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify({ question, history, thread_id: threadId }),
       signal: abortSignal,
     });
 

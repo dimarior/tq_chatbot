@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 100
     max_context_chars: int = 6000
 
+    chroma_path: str = "./chroma_db"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

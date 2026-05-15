@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from uuid import UUID
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -26,6 +27,21 @@ from apps.api.tools.structured_tool import get_structured_data, needs_structured
 
 
 router = APIRouter()
+
+
+async def _load_history_from_db(pool, thread_id: UUID) -> list[dict[str, str]]:
+    """Carga el historial de mensajes de un hilo desde la base de datos."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT role, content
+            FROM messages
+            WHERE conversation_id = $1
+            ORDER BY created_at ASC
+            """,
+            thread_id,
+        )
+    return [{"role": r["role"], "content": r["content"]} for r in rows]
 
 
 # ── Prompt de sistema para el agente enrutador ───────────────────────────────
@@ -81,7 +97,13 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
 
     async def gen() -> AsyncIterator[str]:
         try:
-            history = [m.model_dump() for m in payload.history]
+            # Si hay thread_id, cargar historial desde la base de datos
+            # (memoria persistente entre sesiones). Si no, usar el historial
+            # que envia el cliente.
+            if payload.thread_id:
+                history = await _load_history_from_db(pool, payload.thread_id)
+            else:
+                history = [m.model_dump() for m in payload.history]
 
             # ── DECISION DEL ROUTER ──────────────────────────────────────────
             # El router analiza la pregunta y decide qué herramienta usar.

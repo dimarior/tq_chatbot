@@ -21,31 +21,20 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid5, NAMESPACE_URL
 
-import asyncpg
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
 
 from apps.api.core.config import get_settings
-from apps.api.rag.embeddings import build_embedder
 
 
 LOG = logging.getLogger("ingest")
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
-
-
-def _vector_literal(vec: list[float]) -> str:
-    return "[" + ",".join(f"{x:.7f}" for x in vec) + "]"
-
-
-# La limpieza fuerte ocurre en fetch_sitemaps.py (webclaw --include /
-# --only-main-content). Aquí solo defendemos contra: (1) chunks demasiado
-# cortos para aportar contexto y (2) chunks idénticos entre documentos
-# (footers o separadores que cualquier extractor deja pasar).
-_IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_LINK_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
-_WS_RE = re.compile(r"\s+")
 
 
 def _chunk_quality_ok(chunk: str) -> bool:
@@ -68,15 +57,16 @@ def _chunk_hash(chunk: str) -> str:
 
 
 async def _ingest_one(
-    conn: asyncpg.Connection,
-    embedder,
+    ollama_embedder: OllamaEmbeddings,
+    vector_store: Chroma,
     splitter: RecursiveCharacterTextSplitter,
     doc: dict,
     dry_run: bool,
     seen_hashes: set[str],
+    settings: get_settings,
 ) -> tuple[str, int]:
     url = doc["url"]
-    existing_hash = await conn.fetchval("SELECT content_hash FROM documents WHERE url=$1", url)
+    content_hash = doc["content_hash"]
 
     if existing_hash == doc["content_hash"]:
         return ("unchanged", 0)

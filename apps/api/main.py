@@ -9,8 +9,9 @@ from apps.api.core.config import get_settings
 from apps.api.core.db import create_pool
 from apps.api.llm.ollama_client import OllamaClient
 from apps.api.rag.corpus_stats import compute_corpus_stats
-from apps.api.rag.embeddings import build_embedder
 from apps.api.routers import chat_v2, health, threads
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
 
 
 @asynccontextmanager
@@ -18,7 +19,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.settings = settings
     app.state.pool = await create_pool(settings)
-    app.state.embedder = build_embedder(settings)
+    app.state.ollama_embedder = OllamaEmbeddings(base_url=settings.ollama_host, model=settings.embed_model)
+    app.state.vector_store = Chroma(persist_directory=settings.chroma_path, embedding_function=app.state.ollama_embedder)
     app.state.ollama = OllamaClient(settings.ollama_host, settings.llm_model)
     # Conteo agregado del corpus, calculado una vez al arranque. Preguntas como
     # "¿cuántos artículos científicos hay?" son agregadas, no semánticas: el RAG
@@ -29,7 +31,6 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await app.state.ollama.aclose()
-        await app.state.embedder.aclose()
         await app.state.pool.close()
 
 
