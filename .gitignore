@@ -36,3 +36,5 @@ postgres_data/
 
 # Logs
 *.log
+tq_chatbot/Laboratorio1_IA_CD/
+tq_chatbot/tq-chatbot/
