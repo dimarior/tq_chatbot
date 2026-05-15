@@ -10,15 +10,25 @@ router = APIRouter()
 async def health(request: Request) -> HealthStatus:
     settings = request.app.state.settings
     pool = request.app.state.pool
+    vector_store = request.app.state.vector_store
     ollama = request.app.state.ollama
 
+    # DB de persistencia (conversations/messages). Ping mínimo.
     db_ok = False
-    chunk_count = 0
     try:
         async with pool.acquire() as conn:
-            chunk_count = int(await conn.fetchval("SELECT count(*) FROM chunks"))
+            await conn.fetchval("SELECT 1")
         db_ok = True
     except Exception:
+        pass
+
+    # Conteo de chunks vivos en el vector store (Chroma).
+    chunk_count = 0
+    try:
+        chunk_count = int(vector_store._collection.count())
+    except Exception:
+        # Cliente Chroma podría no exponer _collection en futuras versiones; si
+        # eso pasa, el health quedará en 0 pero no tumba el endpoint.
         pass
 
     ollama_ok = await ollama.health()
