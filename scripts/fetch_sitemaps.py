@@ -34,6 +34,12 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
+# Ejecutable como script (`python scripts/fetch_sitemaps.py`) o importable como
+# módulo: asegura la raíz del repo en sys.path para resolver `scripts.*`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.tqfarma_news import build_news_text, is_tqfarma_login_page, parse_tqfarma_news
+
 
 LOG = logging.getLogger("fetch_sitemaps")
 
@@ -60,9 +66,12 @@ EXTRACTION_FLAGS = {
 }
 
 # tqfarma exige login de profesional de la salud para 1700+ URLs del sitemap;
-# los productos redirigen a /Account/Login. Solo unas pocas URLs son realmente
-# públicas con contenido sustantivo. Cuando un sitio aparece aquí, se ignora
-# el sitemap y se usa esta lista explícita.
+# los productos redirigen a /Account/Login. Estas pocas URLs son públicas con
+# contenido sustantivo y se procesan siempre. Para tqfarma, además de esta
+# lista se recorre el sitemap completo: la mayoría de esas URLs se descartan en
+# _process_one (login wall), pero las "Noticias de actualidad" exponen un
+# resumen público que la rama tqfarma de _process_one extrae. Ver
+# scripts/tqfarma_news.py.
 PUBLIC_URL_OVERRIDES: dict[str, list[str]] = {
     "tqfarma": [
         "https://www.tqfarma.com/",
@@ -223,7 +232,67 @@ def _parse_sitemap(sitemap_url: str) -> list[str]:
 _write_lock = threading.Lock()
 
 
+def _try_tqfarma_news(url: str, force: bool) -> FetchResult | None:
+    """Rama exclusiva de tqfarma: detecta una página "Noticias de actualidad"
+    con resumen público y escribe un payload limpio (título/especialidad/
+    fecha/resumen).
+
+    Devuelve un FetchResult cuando la página ES una noticia de ese tipo
+    (fetched/skipped); devuelve None cuando NO lo es — y entonces _process_one
+    sigue por la ruta normal, dejando intacta cualquier otra página de tqfarma.
+    """
+    try:
+        html = _webclaw_raw(url).decode("utf-8", "replace")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None  # falló el raw fetch → que la ruta normal lo intente/reporte
+
+    parsed = parse_tqfarma_news(html, fallback_url=url)
+    if parsed is None:
+        # Página gated: el raw HTML ya es el login. No hace falta una segunda
+        # llamada a webclaw (--format json) para confirmar el login wall.
+        if is_tqfarma_login_page(html):
+            return FetchResult(url, "tqfarma", "failed", "login wall")
+        return None
+
+    # La URL canónica (og:url) puede diferir de la del sitemap (alias cortos).
+    # Indexamos siempre por la canónica para no duplicar documentos.
+    canonical = parsed["canonical_url"]
+    text = build_news_text(parsed)
+    content_hash = _hash(text)
+    out_path = RAW_DIR / f"{_slug(canonical)}.json"
+
+    if not force:
+        try:
+            existing = json.loads(out_path.read_text("utf-8"))
+            if existing.get("content_hash") == content_hash:
+                return FetchResult(canonical, "tqfarma", "skipped", "hash unchanged")
+        except FileNotFoundError:
+            pass
+        except (json.JSONDecodeError, OSError):
+            pass  # corrupt file → re-fetch
+
+    payload = {
+        "url": canonical,
+        "source": "tqfarma",
+        "title": parsed["title"],
+        "text": text,
+        "content_hash": content_hash,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _write_lock:
+        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
+    return FetchResult(canonical, "tqfarma", "fetched", "news summary")
+
+
 def _process_one(url: str, source: str, force: bool) -> FetchResult:
+    # tqfarma-only: las "Noticias de actualidad" devuelven HTTP 200 con un
+    # resumen público (no redirigen a login). Se detectan y parsean aquí; si la
+    # página no es una noticia de ese tipo, se cae a la ruta normal de abajo.
+    if source == "tqfarma":
+        news = _try_tqfarma_news(url, force)
+        if news is not None:
+            return news
+
     out_path = RAW_DIR / f"{_slug(url)}.json"
 
     try:
@@ -339,17 +408,34 @@ def main() -> int:
         for source, sm_url in sites:
             override = PUBLIC_URL_OVERRIDES.get(source)
             if override:
+                # dedupe preserving order: overrides explícitos, luego descubiertos,
+                # luego el sitemap completo. Los overrides/descubiertos conservan su
+                # comportamiento exacto; las URLs del sitemap que no sean noticias
+                # caen a la ruta normal en _process_one y se descartan igual que hoy.
                 urls = list(override)
-                extras = _discover_extras(source)
-                # dedupe preserving order: explicit overrides first, then discovered
                 seen: set[str] = set(urls)
-                for u in extras:
+                n_explicit = len(urls)
+
+                for u in _discover_extras(source):
                     if u not in seen:
                         urls.append(u)
                         seen.add(u)
+                n_discovered = len(urls) - n_explicit
+
+                try:
+                    sitemap_urls = _parse_sitemap(sm_url)
+                except Exception as e:
+                    LOG.error("sitemap parse failed for %s: %s", source, e)
+                    sitemap_urls = []
+                for u in sitemap_urls:
+                    if u not in seen:
+                        urls.append(u)
+                        seen.add(u)
+                n_sitemap = len(urls) - n_explicit - n_discovered
+
                 LOG.info(
-                    "override %s -> %d public urls (%d explicit + %d discovered, sitemap skipped)",
-                    source, len(urls), len(override), len(urls) - len(override),
+                    "%s -> %d urls (%d explicit + %d discovered + %d sitemap)",
+                    source, len(urls), n_explicit, n_discovered, n_sitemap,
                 )
             else:
                 try:
