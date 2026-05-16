@@ -1,3 +1,4 @@
+import { SettingsPanel } from "@/components/SettingsPanel";
 import { Thread } from "@/components/Thread";
 import { ThreadList } from "@/components/ThreadList";
 
@@ -11,6 +12,10 @@ export function ChatShell() {
       <main className="flex flex-1 flex-col">
         <Thread />
       </main>
+
+      <aside className="hidden w-72 shrink-0 bg-panel p-4 lg:flex lg:flex-col">
+        <SettingsPanel />
+      </aside>
     </div>
   );
 }

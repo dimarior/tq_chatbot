@@ -5,7 +5,9 @@ import type { ChatModelAdapter } from "@assistant-ui/react";
 import { apiUrl } from "./api";
 import { flattenContent, type Role } from "./messages";
 import { parseSSE } from "./sse";
+import { useSettingsStore } from "./settingsStore";
 import { useSourcesStore } from "./sourcesStore";
+import { getActiveRemoteThreadId } from "./threadListAdapter";
 import type { Source } from "./types";
 
 type WireMessage = { role: Role; content: string };
@@ -35,13 +37,18 @@ export const tqChatAdapter: ChatModelAdapter = {
       if (wire) history.push(wire);
     }
 
+    // threadListAdapter ya mantiene este valor sincronizado en initialize/fetch;
+    // no duplicar el estado con un zustand store paralelo.
+    const threadId = getActiveRemoteThreadId();
+    const { temperature, topK } = useSettingsStore.getState();
+
     const res = await fetch(apiUrl("/api/chat"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify({ question, history, thread_id: threadId, temperature, top_k: topK }),
       signal: abortSignal,
     });
 

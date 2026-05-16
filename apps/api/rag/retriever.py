@@ -1,49 +1,60 @@
+"""Retrieval sobre Chroma con filtro de similitud.
+
+Chroma's `similarity_search_with_score` devuelve distancia L2 (cero = idéntico,
+crece con disimilitud). La transformamos a un score 0–1 donde 1 es perfecto
+vía `1 / (1 + L2)` para mantener la semántica de `min_score >= umbral` que
+ya usan el filtro de chips de fuentes y el prompt builder. Esa transformación
+no es la similitud coseno real — al cambiar de embedding o reingestar, hay
+que recalibrar `settings.min_score` mirando los scores reales que produce el
+corpus (ver health endpoint / logs).
+"""
 from __future__ import annotations
 
-import asyncpg
+from langchain_community.vectorstores import Chroma
 
-from apps.api.rag.embeddings import Embedder
 from apps.api.schemas import RetrievedChunk
 
 
-_SEARCH_SQL = """
-SELECT
-    c.document_id,
-    c.chunk_index,
-    c.content,
-    d.url,
-    d.title,
-    1 - (c.embedding <=> $1::vector) AS score
-FROM chunks c
-JOIN documents d ON d.id = c.document_id
-ORDER BY c.embedding <=> $1::vector
-LIMIT $2
-"""
-
-
-def _vector_literal(vec: list[float]) -> str:
-    # pgvector accepts the textual form '[v1,v2,...]'.
-    return "[" + ",".join(f"{x:.7f}" for x in vec) + "]"
+def _l2_to_similarity(distance: float) -> float:
+    """L2 distance → score 0-1 (1 = idéntico, → 0 a medida que crece)."""
+    return 1.0 / (1.0 + distance)
 
 
 async def retrieve(
-    pool: asyncpg.Pool,
-    embedder: Embedder,
+    vector_store: Chroma,
     query: str,
     k: int = 6,
+    min_score: float = 0.50,
 ) -> list[RetrievedChunk]:
-    [vec] = await embedder.embed([query])
-    lit = _vector_literal(vec)
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(_SEARCH_SQL, lit, k)
-    return [
-        RetrievedChunk(
-            document_id=r["document_id"],
-            chunk_index=r["chunk_index"],
-            content=r["content"],
-            url=r["url"],
-            title=r["title"],
-            score=float(r["score"]),
+    """Top-k chunks por similitud, filtrados por min_score.
+
+    Nota: `similarity_search_with_score` es síncrono en langchain-community;
+    se llama directo (la llamada HTTP a Ollama por el embed de la query es
+    bloqueante pero rápida — el cliente Chroma no expone variante async).
+    """
+    docs_with_scores = vector_store.similarity_search_with_score(query, k=k)
+
+    chunks: list[RetrievedChunk] = []
+    for doc, distance in docs_with_scores:
+        meta = doc.metadata or {}
+        url = meta.get("url")
+        document_id = meta.get("document_id")
+        chunk_index = meta.get("chunk_index")
+        if not url or document_id is None or chunk_index is None:
+            continue
+
+        score = _l2_to_similarity(float(distance))
+        if score < min_score:
+            continue
+
+        chunks.append(
+            RetrievedChunk(
+                document_id=int(document_id),
+                chunk_index=int(chunk_index),
+                content=doc.page_content,
+                url=url,
+                title=meta.get("title"),
+                score=score,
+            )
         )
-        for r in rows
-    ]
+    return chunks

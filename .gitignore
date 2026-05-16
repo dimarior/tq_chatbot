@@ -25,10 +25,6 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
-# Docker volumes (si se usa bind mount local)
-ollama_data/
-postgres_data/
-
 # IDE / OS
 .vscode/
 .idea/
@@ -36,3 +32,12 @@ postgres_data/
 
 # Logs
 *.log
+tq_chatbot/Laboratorio1_IA_CD/
+tq_chatbot/tq-chatbot/
+
+# Vector store local (Chroma)
+chroma_db/
+
+# Persistencia local (SQLite + WAL/shm)
+tq.db
+tq.db-*

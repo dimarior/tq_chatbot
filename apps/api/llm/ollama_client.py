@@ -28,6 +28,7 @@ class OllamaClient:
         system: str,
         user: str,
         history: list[dict] | None = None,
+        temperature: float = 0.2,
     ) -> AsyncIterator[str]:
         messages: list[dict] = [{"role": "system", "content": system}]
         if history:
@@ -42,7 +43,7 @@ class OllamaClient:
             # en `message.thinking` y deja `message.content` vacío, rompiendo el
             # streaming hacia el cliente.
             "think": False,
-            "options": {"temperature": 0.2, "num_ctx": 8192},
+            "options": {"temperature": temperature, "num_ctx": 8192},
         }
 
         async with self._client.stream("POST", "/api/chat", json=payload) as resp:

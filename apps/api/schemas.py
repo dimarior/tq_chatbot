@@ -18,8 +18,14 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
-    history: list[ChatMessage] = Field(default_factory=list)
-    conversation_id: UUID | None = None
+    # El historial vive en el checkpointer (AsyncPostgresSaver) keyed por
+    # thread_id; el cliente ya no necesita reenviarlo en cada turno.
+    thread_id: UUID
+    temperature: float = Field(default=0.2, ge=0.0, le=1.0)
+    top_k: int = Field(default=6, ge=1, le=10)
+    # `history` aceptado como deprecated para compatibilidad mientras el
+    # frontend lo sigue enviando — el backend lo ignora.
+    history: list[ChatMessage] = Field(default_factory=list, deprecated=True)
 
 
 class Source(BaseModel):
