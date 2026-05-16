@@ -180,8 +180,12 @@ def make_retrieve_node(deps: GraphDeps):
     async def retrieve_node(state: ChatState) -> dict:
         # Chroma's similarity_search_with_score es síncrono en langchain-community
         # (no expone variante async). El embed de la query bloquea brevemente.
+        # top_k del SettingsPanel cuando el cliente lo manda; si no, el default
+        # global (Settings.top_k). Esto deja al endpoint elegir cuántos chunks
+        # recuperar por turno sin redeplogar el backend.
+        top_k = state.get("top_k") or deps.settings.top_k
         docs_with_scores = deps.vector_store.similarity_search_with_score(
-            state["question"], k=deps.settings.top_k
+            state["question"], k=top_k
         )
         chunks: list[RetrievedChunk] = []
         for doc, distance in docs_with_scores:
@@ -237,7 +241,8 @@ def make_generate_node(deps: GraphDeps):
         # Cada invocación del grafo construye un ChatOllama con la temperatura
         # del turno. ChatOllama es barato de instanciar (configura un cliente
         # HTTP, no carga modelos), así esto NO penaliza performance.
-        chat_llm = make_chat_llm(deps.settings)
+        temperature = state.get("temperature", 0.2)
+        chat_llm = make_chat_llm(deps.settings, temperature=temperature)
         prompt_messages = [
             SystemMessage(content=system),
             *history,

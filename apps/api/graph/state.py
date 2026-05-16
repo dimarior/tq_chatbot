@@ -53,3 +53,9 @@ class ChatState(TypedDict, total=False):
     sources: list[Source]
     # Bloque de contexto que se inyecta en el prompt del nodo generate.
     context: str
+    # Parámetros por turno provenientes del SettingsPanel del frontend.
+    # No se persisten en el checkpoint del próximo turno (se sobreescriben
+    # en cada invocación), pero viven en el state para que retrieve_node y
+    # generate_node los consuman sin depender de los defaults globales.
+    temperature: float
+    top_k: int

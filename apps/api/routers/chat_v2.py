@@ -58,7 +58,11 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
     async def gen() -> AsyncIterator[str]:
         try:
             config = {"configurable": {"thread_id": str(payload.thread_id)}}
-            inputs = {"question": payload.question}
+            inputs = {
+                "question": payload.question,
+                "temperature": payload.temperature,
+                "top_k": payload.top_k,
+            }
 
             async for stream_mode, data in graph.astream(
                 inputs,
