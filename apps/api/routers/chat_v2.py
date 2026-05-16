@@ -24,6 +24,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessageChunk
 
 from apps.api.schemas import ChatRequest, Source
 
@@ -73,11 +74,21 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
                             yield _sse(_sources_payload(sources), event="sources")
 
                 elif stream_mode == "messages":
-                    # data es (LLMMessageChunk, metadata). Filtramos por el
-                    # nodo `generate` para no emitir los tokens del clasificador
-                    # del router como respuesta al usuario.
+                    # data es (BaseMessage|MessageChunk, metadata).
+                    # Filtramos en dos pasos:
+                    # 1) Sólo el nodo `generate` — evita emitir los tokens
+                    #    del clasificador del router como respuesta al usuario.
+                    # 2) Sólo AIMessageChunk — descarta los HumanMessage y
+                    #    AIMessage completos que LangGraph también emite por
+                    #    este canal cuando `generate_node` retorna
+                    #    `{"messages": [HumanMessage(q), AIMessage(full)]}`
+                    #    y `add_messages` los aplica al state. Sin este filtro
+                    #    el frontend recibía la pregunta del usuario y la
+                    #    respuesta completa duplicadas tras los chunks.
                     chunk, metadata = data
                     if metadata.get("langgraph_node") != "generate":
+                        continue
+                    if not isinstance(chunk, AIMessageChunk):
                         continue
                     piece = chunk.content if isinstance(chunk.content, str) else ""
                     if piece:
