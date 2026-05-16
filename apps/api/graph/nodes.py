@@ -15,10 +15,14 @@ del app.state evita un nivel de indirección).
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from langchain_community.vectorstores import Chroma
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+
+_LOG = logging.getLogger("tq.graph")
 
 from apps.api.core.config import Settings
 from apps.api.graph.llm import make_chat_llm, make_router_llm
@@ -30,23 +34,47 @@ from apps.api.tools.structured_tool import get_structured_data
 
 
 ROUTER_SYSTEM = (
-    "Eres el clasificador del router del agente TQ-Asistente de Tecnoquímicas "
+    "Sos el clasificador del router del agente TQ-Asistente de Tecnoquímicas "
     "S.A.\n\n"
-    "Debajo está el historial reciente de la conversación (puede estar vacío "
-    "en el primer turno) seguido de la NUEVA pregunta del usuario al final. "
-    "Decide cuál herramienta disparar para responder esa NUEVA pregunta:\n\n"
-    "- 'direct': la respuesta se puede dar SÓLO desde la conversación previa "
-    "(referencia a turnos anteriores como '¿y por qué?', 'explícame eso', "
-    "'¿cuál fue el segundo punto?'), O es una interacción social que no "
-    "requiere datos del corpus (saludos, agradecimientos, despedidas, "
-    "preguntas meta).\n"
-    "- 'structured': la NUEVA pregunta pide un dato exacto y verificado "
-    "(teléfono, horario, NIT, dirección de sedes, lista de marcas, línea "
-    "ética, portal de empleo).\n"
-    "- 'rag': la NUEVA pregunta requiere comprensión semántica del corpus "
-    "(historia de la empresa, productos en detalle, ciencia médica, "
-    "sostenibilidad, cultura corporativa).\n\n"
-    "Responde con la clasificación; no expliques tu decisión."
+    "Recibís el historial reciente del hilo (puede estar vacío en el primer "
+    "turno) seguido de la NUEVA pregunta del usuario al final. Tu único "
+    "trabajo: elegir la herramienta que va a responder esa NUEVA pregunta.\n\n"
+    "TRES OPCIONES:\n\n"
+    "── 'direct' — sin retrieval, sin herramienta. ──────────────────────────\n"
+    "Aplica cuando la NUEVA pregunta:\n"
+    "  • Refiere a turnos anteriores del hilo: '¿y por qué?', 'explícame eso',\n"
+    "    '¿cuál fue el segundo punto?', '¿cómo me llamo?' (si el usuario\n"
+    "    presentó su nombre antes), 'repítelo', 'continuá'.\n"
+    "  • Es interacción social: 'hola', 'buenos días', 'gracias', 'chao',\n"
+    "    'cuéntame un chiste', 'cómo estás'.\n"
+    "  • El usuario provee información sobre sí mismo: 'me llamo Jacob',\n"
+    "    'soy estudiante', 'trabajo en una farmacéutica'. Hay que acusar\n"
+    "    recibo, NO buscar nada.\n"
+    "  • El mensaje NO es sobre Tecnoquímicas/tqfarma en lo absoluto\n"
+    "    (pregunta meta, off-topic, prueba del usuario).\n\n"
+    "── 'structured' — usa el JSON de datos exactos. ───────────────────────\n"
+    "Aplica SÓLO cuando piden uno de estos datos verificados:\n"
+    "  • Teléfono de servicio al cliente o línea ética\n"
+    "  • Horario de atención\n"
+    "  • NIT o razón social\n"
+    "  • Dirección o ubicación de sedes\n"
+    "  • Lista de marcas o portafolio\n"
+    "  • Portal de empleo / vacantes\n\n"
+    "── 'rag' — busca en el corpus indexado de TQ y tqfarma. ────────────────\n"
+    "Aplica cuando piden información que requiere lectura del sitio web o\n"
+    "la biblioteca científica:\n"
+    "  • Historia de la empresa, fundadores, evolución\n"
+    "  • Detalle de productos, indicaciones, mecanismos de acción\n"
+    "  • Sostenibilidad, cultura corporativa, valores\n"
+    "  • Artículos científicos, especialidades médicas\n"
+    "  • Cualquier tema sobre TQ que requiera explicación, no un dato puntual\n\n"
+    "REGLAS DE DESEMPATE:\n"
+    "  - Si dudás entre 'rag' y 'direct', preferí 'direct' — es barato y el\n"
+    "    usuario puede reformular si necesitamos buscar.\n"
+    "  - Si dudás entre 'structured' y 'rag', preferí 'rag' (más cobertura).\n"
+    "  - Mensajes muy cortos (1-3 palabras) que no pidan un dato concreto\n"
+    "    casi siempre son 'direct'.\n\n"
+    "Respondé SÓLO con la clasificación; no expliques tu decisión."
 )
 
 # Cuántos mensajes recientes se le pasan al router. Acotamos para no inflar
@@ -106,6 +134,14 @@ def make_classify_node(deps: GraphDeps):
                 *recent,
                 HumanMessage(content=state["question"]),
             ]
+        )
+        # Log visible en la terminal del backend — ayuda a debuggear cuando
+        # el router se equivoca sin tener LangSmith activo.
+        _LOG.info(
+            "router → %s | history=%d msgs | q=%r",
+            decision.route,
+            len(history),
+            state["question"][:80],
         )
         return {"route": decision.route}
 
