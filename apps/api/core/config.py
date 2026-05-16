@@ -14,7 +14,11 @@ class Settings(BaseSettings):
 
     embed_model: str = "qwen3-embedding:0.6b"
 
-    database_url: str = "postgresql://tq:tq@localhost:5432/tq"
+    # Archivo SQLite donde viven conversations/messages (UI) Y los
+    # checkpoints de LangGraph (memoria del grafo). Un solo archivo, dos
+    # conjuntos de tablas. Borrar este archivo resetea todo el estado del
+    # backend (excepto Chroma, que vive aparte en chroma_path).
+    sqlite_path: str = "./tq.db"
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000

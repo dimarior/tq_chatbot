@@ -1,10 +1,11 @@
-"""Endpoints de persistencia de hilos.
+"""Endpoints de persistencia de hilos sobre SQLite.
 
 Implementa la superficie que assistant-ui's RemoteThreadListAdapter espera.
 La paginación usa created_at ISO como cursor (descendente, hilos más recientes
-primero). El orden del sidebar es estable: abrir, renombrar o responder un hilo
-no debe cambiar su posición. El chat (`/api/chat`) sigue siendo stateless: la
-persistencia es responsabilidad de estos endpoints.
+primero). El orden del sidebar es estable: abrir, renombrar o responder un
+hilo no debe cambiar su posición. La memoria conversacional del LLM la lleva
+LangGraph (AsyncSqliteSaver en las tablas `checkpoints*`); estas tablas
+(`conversations`, `messages`) son la vista persistida para el frontend.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from apps.api.schemas import (
     ChatMessage,
@@ -55,19 +57,34 @@ def _parse_sources(value: object) -> list[Source] | None:
     return [Source(**s) for s in value]
 
 
+def _parse_ts(value: object) -> datetime | None:
+    """SQLite devuelve TEXT en formato ISO; lo convertimos a datetime."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        # Tolera "...Z" o sin sufijo de zona horaria.
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return None
+
+
 @router.get("/api/threads", response_model=ThreadListOut)
 async def list_threads(request: Request, after: str | None = None) -> ThreadListOut:
-    pool = request.app.state.pool
-    cursor_dt: datetime | None = None
+    db = request.app.state.db
+    cursor: str | None = None
     if after:
         try:
-            cursor_dt = datetime.fromisoformat(after)
+            # Validamos parseando (lanza si es inválido) pero pasamos el
+            # string crudo a la query — SQLite compara TEXT ISO 8601 ordenado.
+            datetime.fromisoformat(after)
+            cursor = after
         except ValueError as e:
             raise HTTPException(status_code=400, detail="Cursor inválido") from e
 
-    async with pool.acquire() as conn:
-        if cursor_dt is None:
-            rows = await conn.fetch(
+    async with db.acquire() as conn:
+        if cursor is None:
+            cur = await conn.execute(
                 """
                 SELECT id, title, archived, created_at
                 FROM conversations
@@ -77,34 +94,38 @@ async def list_threads(request: Request, after: str | None = None) -> ThreadList
                     WHERE conversation_id = conversations.id
                 )
                 ORDER BY created_at DESC
-                LIMIT $1
+                LIMIT ?
                 """,
-                PAGE_SIZE + 1,
+                (PAGE_SIZE + 1,),
             )
+            rows = await cur.fetchall()
         else:
-            rows = await conn.fetch(
+            cur = await conn.execute(
                 """
                 SELECT id, title, archived, created_at
                 FROM conversations
-                WHERE created_at < $1
+                WHERE created_at < ?
                   AND EXISTS (
                       SELECT 1
                       FROM messages
                       WHERE conversation_id = conversations.id
                   )
                 ORDER BY created_at DESC
-                LIMIT $2
+                LIMIT ?
                 """,
-                cursor_dt,
-                PAGE_SIZE + 1,
+                (cursor, PAGE_SIZE + 1),
             )
+            rows = await cur.fetchall()
 
     next_cursor: str | None = None
     if len(rows) > PAGE_SIZE:
-        next_cursor = rows[PAGE_SIZE - 1]["created_at"].isoformat()
+        next_cursor = rows[PAGE_SIZE - 1]["created_at"]
         rows = rows[:PAGE_SIZE]
 
-    threads = [ThreadOut(id=r["id"], title=r["title"], archived=r["archived"]) for r in rows]
+    threads = [
+        ThreadOut(id=UUID(r["id"]), title=r["title"], archived=bool(r["archived"]))
+        for r in rows
+    ]
     return ThreadListOut(threads=threads, next_cursor=next_cursor)
 
 
@@ -113,65 +134,72 @@ async def create_thread(payload: ThreadCreate, request: Request) -> ThreadOut:
     new_id = uuid4()
     # assistant-ui puede pedir un hilo "draft" que nunca recibe mensajes
     # (por ejemplo, al montar o recargar una ruta existente). No lo
-    # persistimos aquí para evitar basura; la conversación se materializa en el
-    # primer append de mensaje.
+    # persistimos aquí para evitar basura; la conversación se materializa
+    # en el primer append de mensaje.
     return ThreadOut(id=new_id, title="Nueva conversación", archived=False)
 
 
 @router.get("/api/threads/{thread_id}", response_model=ThreadOut)
 async def get_thread(thread_id: UUID, request: Request) -> ThreadOut:
-    pool = request.app.state.pool
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, title, archived FROM conversations WHERE id = $1",
-            thread_id,
+    db = request.app.state.db
+    async with db.acquire() as conn:
+        cur = await conn.execute(
+            "SELECT id, title, archived FROM conversations WHERE id = ?",
+            (str(thread_id),),
         )
+        row = await cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Hilo no encontrado")
-    return ThreadOut(id=row["id"], title=row["title"], archived=row["archived"])
+    return ThreadOut(id=UUID(row["id"]), title=row["title"], archived=bool(row["archived"]))
 
 
 @router.patch("/api/threads/{thread_id}", status_code=204)
 async def patch_thread(thread_id: UUID, payload: ThreadPatch, request: Request) -> Response:
-    pool = request.app.state.pool
+    db = request.app.state.db
     sets: list[str] = []
-    args: list = [thread_id]
+    args: list = []
     if payload.title is not None:
+        sets.append("title = ?")
         args.append(payload.title)
-        sets.append(f"title = ${len(args)}")
     if payload.archived is not None:
-        args.append(payload.archived)
-        sets.append(f"archived = ${len(args)}")
+        sets.append("archived = ?")
+        args.append(1 if payload.archived else 0)
     if not sets:
         raise HTTPException(status_code=400, detail="Sin cambios")
-    sets.append("updated_at = now()")
+    sets.append("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')")
+    args.append(str(thread_id))
 
-    async with pool.acquire() as conn:
-        result = await conn.execute(
-            f"UPDATE conversations SET {', '.join(sets)} WHERE id = $1",
-            *args,
+    async with db.acquire() as conn:
+        cur = await conn.execute(
+            f"UPDATE conversations SET {', '.join(sets)} WHERE id = ?",
+            args,
         )
-    if result.endswith(" 0"):
-        raise HTTPException(status_code=404, detail="Hilo no encontrado")
+        await conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Hilo no encontrado")
     return Response(status_code=204)
 
 
 @router.delete("/api/threads/{thread_id}", status_code=204)
 async def delete_thread(thread_id: UUID, request: Request) -> Response:
-    pool = request.app.state.pool
-    async with pool.acquire() as conn:
-        await conn.execute("DELETE FROM conversations WHERE id = $1", thread_id)
+    db = request.app.state.db
+    async with db.acquire() as conn:
+        await conn.execute("DELETE FROM conversations WHERE id = ?", (str(thread_id),))
+        await conn.commit()
     return Response(status_code=204)
 
 
 @router.post("/api/threads/{thread_id}/title", response_model=TitleResponse)
 async def generate_title(thread_id: UUID, payload: TitleRequest, request: Request) -> TitleResponse:
-    pool = request.app.state.pool
-    ollama = request.app.state.ollama
+    db = request.app.state.db
+    chat_llm = request.app.state.chat_llm
 
     # Pre-check barato (un roundtrip) antes de gastar 2-5s en el LLM.
-    async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM conversations WHERE id = $1", thread_id)
+    async with db.acquire() as conn:
+        cur = await conn.execute(
+            "SELECT 1 FROM conversations WHERE id = ?", (str(thread_id),)
+        )
+        exists = await cur.fetchone()
     if not exists:
         raise HTTPException(status_code=404, detail="Hilo no encontrado")
 
@@ -179,52 +207,60 @@ async def generate_title(thread_id: UUID, payload: TitleRequest, request: Reques
     if not msgs:
         return TitleResponse(title="Nueva conversación")
 
-    raw = await ollama.complete(TITLE_SYSTEM, _title_user_prompt(msgs))
+    response = await chat_llm.ainvoke(
+        [
+            SystemMessage(content=TITLE_SYSTEM),
+            HumanMessage(content=_title_user_prompt(msgs)),
+        ]
+    )
+    raw = response.content if isinstance(response.content, str) else ""
     # Modelos a veces devuelven el título envuelto en comillas o con prefijos.
     title = raw.strip().strip('"').strip("'").splitlines()[0][:80] or "Nueva conversación"
 
-    async with pool.acquire() as conn:
+    async with db.acquire() as conn:
         await conn.execute(
             """
             UPDATE conversations
-            SET title = $2, updated_at = now()
-            WHERE id = $1
+            SET title = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?
             """,
-            thread_id,
-            title,
+            (title, str(thread_id)),
         )
+        await conn.commit()
 
     return TitleResponse(title=title)
 
 
 @router.get("/api/threads/{thread_id}/messages", response_model=list[MessageOut])
 async def list_messages(thread_id: UUID, request: Request) -> list[MessageOut]:
-    pool = request.app.state.pool
-    async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM conversations WHERE id = $1", thread_id)
-        if not exists:
+    db = request.app.state.db
+    async with db.acquire() as conn:
+        cur = await conn.execute(
+            "SELECT 1 FROM conversations WHERE id = ?", (str(thread_id),)
+        )
+        if not await cur.fetchone():
             raise HTTPException(status_code=404, detail="Hilo no encontrado")
-        rows = await conn.fetch(
+        cur = await conn.execute(
             """
             SELECT id, parent_id, role, content, sources, created_at
             FROM messages
-            WHERE conversation_id = $1
+            WHERE conversation_id = ?
             ORDER BY created_at ASC
             """,
-            thread_id,
+            (str(thread_id),),
         )
+        rows = await cur.fetchall()
 
     out: list[MessageOut] = []
     for r in rows:
-        sources = _parse_sources(r["sources"])
         out.append(
             MessageOut(
-                id=r["id"],
-                parent_id=r["parent_id"],
+                id=UUID(r["id"]),
+                parent_id=UUID(r["parent_id"]) if r["parent_id"] else None,
                 role=r["role"],
                 content=r["content"],
-                sources=sources,
-                created_at=r["created_at"],
+                sources=_parse_sources(r["sources"]),
+                created_at=_parse_ts(r["created_at"]),
             )
         )
     return out
@@ -232,7 +268,7 @@ async def list_messages(thread_id: UUID, request: Request) -> list[MessageOut]:
 
 @router.post("/api/threads/{thread_id}/messages")
 async def append_message(thread_id: UUID, payload: MessageAppend, request: Request) -> dict:
-    pool = request.app.state.pool
+    db = request.app.state.db
     msg = payload.message
     msg_id = msg.id or uuid4()
     sources_json = (
@@ -241,36 +277,49 @@ async def append_message(thread_id: UUID, payload: MessageAppend, request: Reque
         else None
     )
 
-    # Un solo statement: INSERT + UPDATE conversations.updated_at via CTE.
-    # La FK valida la existencia del hilo; un re-post idempotente (ON CONFLICT)
-    # no bumpea updated_at, lo cual es la semántica correcta.
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO conversations (id)
-            VALUES ($1)
-            ON CONFLICT (id) DO NOTHING
-            """,
-            thread_id,
-        )
-        await conn.execute(
-            """
-            WITH ins AS (
-                INSERT INTO messages (id, conversation_id, parent_id, role, content, sources)
-                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+    # SQLite no soporta CTEs con DML chained al estilo de Postgres. Lo
+    # resolvemos en dos statements dentro de una transacción: primero
+    # materializamos el hilo si no existía, después insertamos el mensaje
+    # y bumpeamos updated_at si la inserción no fue idempotent-skip.
+    async with db.acquire() as conn:
+        try:
+            await conn.execute("BEGIN")
+            await conn.execute(
+                """
+                INSERT INTO conversations (id)
+                VALUES (?)
                 ON CONFLICT (id) DO NOTHING
-                RETURNING conversation_id
+                """,
+                (str(thread_id),),
             )
-            UPDATE conversations
-            SET updated_at = now()
-            WHERE id = $2 AND EXISTS (SELECT 1 FROM ins)
-            """,
-            msg_id,
-            thread_id,
-            payload.parentId,
-            msg.role,
-            msg.content,
-            sources_json,
-        )
+            cur = await conn.execute(
+                """
+                INSERT INTO messages
+                    (id, conversation_id, parent_id, role, content, sources)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (
+                    str(msg_id),
+                    str(thread_id),
+                    str(payload.parentId) if payload.parentId else None,
+                    msg.role,
+                    msg.content,
+                    sources_json,
+                ),
+            )
+            if cur.rowcount > 0:
+                await conn.execute(
+                    """
+                    UPDATE conversations
+                    SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    WHERE id = ?
+                    """,
+                    (str(thread_id),),
+                )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
     return {"id": str(msg_id)}

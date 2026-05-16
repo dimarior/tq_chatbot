@@ -9,7 +9,7 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 
 from apps.api.core.config import Settings, get_settings
-from apps.api.core.db import create_pool
+from apps.api.core.db import init_db
 from apps.api.llm.ollama_client import OllamaClient
 from apps.api.rag.corpus_stats import compute_corpus_stats
 from apps.api.routers import chat_v2, health, threads
@@ -31,7 +31,6 @@ def _configure_langsmith(settings: Settings) -> None:
     os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key
     os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
     os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
-    # Variables legadas — algunos componentes de langchain todavía las miran.
     os.environ["LANGCHAIN_TRACING_V2"] = "true"
     os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
     os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
@@ -42,19 +41,19 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     _configure_langsmith(settings)
 
-    # Imports diferidos: hay que setear las env vars de LangSmith ANTES de que
-    # langgraph se importe (resuelve su cliente de tracing en import time).
-    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from psycopg_pool import AsyncConnectionPool
+    # Imports diferidos: hay que setear LANGSMITH_* en os.environ ANTES de
+    # que langgraph se importe (resuelve su cliente de tracing en import time).
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
     from apps.api.graph import build_graph
+    from apps.api.graph.llm import make_chat_llm
 
     app.state.settings = settings
-    app.state.pool = await create_pool(settings)
+    # Persistencia de hilos (conversations + messages). Mismo archivo SQLite
+    # que la checkpointer del grafo, distintas tablas — no se pisan.
+    app.state.db = await init_db(settings)
 
-    # OllamaEmbeddings vive dentro del cliente Chroma (`embedding_function`).
-    # Se usa para calcular el embedding de la query cada vez que el grafo
-    # llama a similarity_search_with_score.
     embedder = OllamaEmbeddings(
         base_url=settings.ollama_host,
         model=settings.embed_model,
@@ -63,27 +62,18 @@ async def lifespan(app: FastAPI):
         persist_directory=settings.chroma_path,
         embedding_function=embedder,
     )
-    # OllamaClient sigue siendo el motor para tareas one-shot fuera del grafo
-    # (p.ej. generación de títulos en /api/threads/{id}/title).
     app.state.ollama = OllamaClient(settings.ollama_host, settings.llm_model)
     app.state.corpus_stats = compute_corpus_stats(app.state.vector_store)
 
     # ── Checkpointer de LangGraph ────────────────────────────────────────────
-    # AsyncPostgresSaver usa psycopg3 (no asyncpg). Compartir DSN con el pool
-    # de threads.py está bien — Postgres maneja conexiones independientes.
-    # setup() es idempotente: crea las tablas `checkpoints`, `checkpoint_blobs`
-    # y `checkpoint_writes` la primera vez y no hace nada después.
-    checkpoint_pool = AsyncConnectionPool(
-        conninfo=settings.database_url,
-        max_size=5,
-        kwargs={"autocommit": True, "prepare_threshold": 0},
-        open=False,
-    )
-    await checkpoint_pool.open()
-    checkpointer = AsyncPostgresSaver(checkpoint_pool)
+    # AsyncSqliteSaver gestiona su propia conexión aiosqlite al mismo archivo.
+    # setup() crea las tablas checkpoints/checkpoint_blobs/checkpoint_writes/
+    # checkpoint_migrations la primera vez (idempotente).
+    checkpoint_conn = await aiosqlite.connect(settings.sqlite_path)
+    checkpointer = AsyncSqliteSaver(checkpoint_conn)
     await checkpointer.setup()
 
-    app.state.checkpoint_pool = checkpoint_pool
+    app.state.checkpoint_conn = checkpoint_conn
     app.state.checkpointer = checkpointer
     app.state.graph = build_graph(
         settings=settings,
@@ -92,12 +82,15 @@ async def lifespan(app: FastAPI):
         checkpointer=checkpointer,
     )
 
+    # ChatOllama reutilizable para tareas one-shot fuera del grafo (p.ej.
+    # generación de títulos en /api/threads/{id}/title).
+    app.state.chat_llm = make_chat_llm(settings)
+
     try:
         yield
     finally:
         await app.state.ollama.aclose()
-        await checkpoint_pool.close()
-        await app.state.pool.close()
+        await checkpoint_conn.close()
 
 
 def create_app() -> FastAPI:
