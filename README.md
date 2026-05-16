@@ -22,7 +22,7 @@ Chatbot RAG sobre Tecnoquímicas S.A. - backend en FastAPI, modelo local Qwen3-8
 | LLM | Qwen3-8B-Instruct vía Ollama (`apps/api/llm/ollama_client.py`) |
 | Embeddings | Qwen3-Embedding-0.6B vía `langchain-community` `OllamaEmbeddings` |
 | Vector DB | Chroma persistente (`./chroma_db/`, `langchain-community.vectorstores.Chroma`) |
-| Persistencia de hilos | PostgreSQL 16 (`conversations`, `messages`) + asyncpg |
+| Persistencia | SQLite (`./tq.db`) — `conversations`+`messages` (UI) y `checkpoints*` (memoria del grafo) en el mismo archivo |
 | Scraping | [webclaw](https://github.com/0xMassi/webclaw) (Rust CLI) - `brew install` |
 | Chunking | LangChain `RecursiveCharacterTextSplitter` |
 | Orquestación | LangGraph `StateGraph` con 4 nodos (`apps/api/graph/`) |
@@ -33,7 +33,7 @@ Chatbot RAG sobre Tecnoquímicas S.A. - backend en FastAPI, modelo local Qwen3-8
 | Herramienta estructurada | `datos_estructurados.json` + `structured_tool.py` |
 | Router / Agente | `classify` node con `ChatOllama.with_structured_output(RouteDecision)` |
 | Panel de parámetros | Sliders de `temperature` y `top_k` por turno (`SettingsPanel.tsx`) |
-| Infra | docker-compose |
+| Infra | Procesos del host (sin Docker) — `uv` para backend, `pnpm` para frontend |
 
 Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -137,37 +137,42 @@ Al abrir o recargar un hilo, `MyRuntimeProvider` remonta el `RuntimeScope` con e
 
 ## Prerrequisitos
 
-- Docker Desktop con >= 8 GB asignados (recomendado 12 GB)
+- Python 3.12 + `uv`
+- Node 20+ + `pnpm` (para el frontend)
 - ~10 GB de disco libre para modelos
-- Python 3.12 + `uv` (sólo para correr los scripts de fetch/ingest desde host)
-- [`webclaw`](https://github.com/0xMassi/webclaw) en el PATH para el script de scraping:
+- **Ollama** instalado nativo en el host (no en Docker) con los modelos descargados:
+  ```bash
+  ollama pull qwen3:8b
+  ollama pull qwen3-embedding:0.6b
+  ```
+- [`webclaw`](https://github.com/0xMassi/webclaw) en el PATH **sólo si vas a re-scrapear**:
   ```bash
   brew install 0xMassi/webclaw/webclaw
   ```
 
+> **Sin Docker.** Todo el stack corre como procesos del host: SQLite vive en
+> un archivo (`./tq.db`), Chroma en un directorio (`./chroma_db/`), Ollama
+> en `http://localhost:11434`. Esto reemplazó al docker-compose anterior.
+
 ## Quickstart
 
 ```bash
-# 1. Configurar entorno
-cp .env.example .env
+# 1. Instalar dependencias (backend + frontend)
+make install
+#   equivale a:  uv sync && (cd frontend && pnpm install)
 
-# 2. Levantar stack (postgres + api). Primer arranque crea las tablas (incluye conversations/messages).
-docker compose up -d
-
-# 3. Scrapear sitios (idempotente - re-ejecutable). Requiere `webclaw` instalado.
-uv sync
+# 2. (Una vez) Scrapear los sitios — necesita `webclaw` en el PATH.
 uv run python scripts/fetch_sitemaps.py --site all
 
-# 4. Indexar al RAG (idempotente)
-uv run python scripts/ingest_to_rag.py
+# 3. Indexar el corpus en Chroma (idempotente; re-ejecutable).
+make ingest
+#   equivale a:  uv run python scripts/ingest_to_rag.py
 
-# 5. Levantar el frontend (Next.js + assistant-ui)
-cd frontend
-cp .env.local.example .env.local        # apunta a http://localhost:8000
-pnpm install
-pnpm dev                                # http://localhost:3000
+# 4. Levantar backend y frontend (dos terminales).
+make backend     # uvicorn :8000, crea ./tq.db al arrancar
+make frontend    # next dev :3000
 
-# 6. Abrir el chat
+# 5. Abrir el chat
 open http://localhost:3000
 ```
 
@@ -186,8 +191,8 @@ uv run python scripts/fetch_sitemaps.py --site tqfarma
 # Ingesta dry-run (cuenta cambios sin escribir)
 uv run python scripts/ingest_to_rag.py --dry-run
 
-# Reset total del RAG
-uv run python scripts/reset_rag.py
+# Reset total: borra SQLite + Chroma (data/raw se conserva)
+make reset
 
 # Health check
 curl http://localhost:8000/api/health
@@ -206,6 +211,7 @@ curl http://localhost:8000/api/health
 |   +-- tools/             herramienta de datos estructurados
 |   +-- datos_estructurados.json   datos exactos de TQ
 +-- chroma_db/             persist directory de Chroma (gitignored, generado por ingest)
++-- tq.db                  SQLite local con conversations + messages + checkpoints (gitignored)
 +-- frontend/              Next.js + assistant-ui
 |   +-- app/               layout + page (sidebar + chat)
 |   +-- components/        ThreadList, Thread, Composer, Messages, SourcesFooter
@@ -229,8 +235,8 @@ Ver `.env.example`. Las más importantes:
 | `TOP_K` | `6` | Chunks recuperados por consulta (override per-request desde el slider del frontend). |
 | `MIN_SCORE` | `0.40` | Umbral de relevancia tras transformar L2 → `1/(1+L2)`. Recalibrar tras reingestar. |
 | `CHROMA_PATH` | `./chroma_db` | Persist directory de Chroma. Compartido entre host y contenedor vía bind mount. |
-| `OLLAMA_HOST` | `http://host.docker.internal:11434` | Dentro de Docker (Ollama nativo en macOS). Desde host: `http://localhost:11434`. |
-| `DATABASE_URL` | `postgresql://tq:tq@postgres:5432/tq` | Postgres guarda `conversations`, `messages` (UI) y los `checkpoints` de LangGraph (memoria del grafo). Usa `localhost` desde host. |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama corre nativo en el host (no en Docker). |
+| `SQLITE_PATH` | `./tq.db` | Único archivo de persistencia: contiene `conversations`+`messages` (UI) **y** los `checkpoints*` del grafo (memoria por hilo). Borrarlo resetea toda la memoria. |
 | `LLM_ROUTER_MODEL` | _vacío_ | Modelo opcional para el nodo `classify`. Si vacío, usa `LLM_MODEL`. Útil para bajar a `qwen3:1.7b` y acelerar el routing. |
 | `LANGSMITH_TRACING` | `false` | Setear `true` para enviar traces a LangSmith. Requiere también `LANGSMITH_API_KEY`. |
 | `LANGSMITH_API_KEY` | _vacío_ | API key de LangSmith. Sin esto, el tracing queda apagado aunque `LANGSMITH_TRACING=true`. |

@@ -1,13 +1,12 @@
+# Quickstart sin Docker. Sólo Ollama tiene que correr aparte (host).
+
 # ── Instalación ──────────────────────────────
 install:
 	uv sync
 	cd frontend && pnpm install
 
-# ── Desarrollo (levanta todo) ─────────────────
-dev:
-	docker compose up -d
-	uv run uvicorn apps.api.main:app --reload --port 8000 &
-	cd frontend && pnpm dev
+# ── Desarrollo (backend + frontend, dos procesos) ─────────────────
+dev: backend frontend
 
 # ── Solo backend ──────────────────────────────
 backend:
@@ -17,15 +16,16 @@ backend:
 frontend:
 	cd frontend && pnpm dev
 
-# ── Base de datos ─────────────────────────────
-db:
-	docker compose up -d
+# ── Ingesta del corpus a Chroma ───────────────
+ingest:
+	uv run python scripts/ingest_to_rag.py
+
+# ── Reset total (borra SQLite + Chroma; el corpus en data/raw se conserva)
+reset:
+	rm -f tq.db tq.db-shm tq.db-wal
+	rm -rf chroma_db
 
 # ── Limpiar cache ─────────────────────────────
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -name "*.pyc" -delete
-
-# ── Ver logs ──────────────────────────────────
-logs:
-	docker compose logs -f
