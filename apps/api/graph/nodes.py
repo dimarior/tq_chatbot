@@ -1,14 +1,17 @@
 """Nodos del grafo TQ-Asistente.
 
-Cuatro nodos:
-  * classify_node — LLM decide structured vs rag (with_structured_output).
+Cinco nodos:
+  * classify_node — LLM decide direct vs structured vs rag, tomando en cuenta
+    el historial reciente del hilo (no sólo la pregunta actual).
+  * direct_node — sin recuperación, sin herramienta; el LLM responde desde
+    el historial. Para follow-ups, aclaraciones y conversación social.
   * structured_node — get_structured_data + source sintético.
   * retrieve_node — similarity search sobre Chroma + Source[] reales.
-  * generate_node — ChatOllama.astream con el prompt y el historial.
+  * generate_node — ChatOllama.astream con el system prompt apropiado al ruta.
 
-El retrieve_node usa el mismo Chroma del app.state (sin envolver en un
-BaseRetriever custom): vector_store.similarity_search_with_score es la API
-ya off-the-shelf de LangChain.
+El retrieve_node usa la misma transformación 1/(1+L2) que ya documentaba
+apps/api/rag/retriever.py, sólo que inline (acceso directo al vector_store
+del app.state evita un nivel de indirección).
 """
 from __future__ import annotations
 
@@ -27,21 +30,44 @@ from apps.api.tools.structured_tool import get_structured_data
 
 
 ROUTER_SYSTEM = (
-    "Eres el clasificador del router del agente TQ-Asistente de Tecnoquímicas S.A.\n"
-    "Decide entre dos herramientas según la pregunta del usuario:\n"
-    "  - 'structured': datos exactos y verificados (teléfono, horario, NIT,\n"
-    "    razón social, dirección de sedes, lista de marcas, portal de empleo,\n"
-    "    línea ética).\n"
-    "  - 'rag': preguntas abiertas sobre historia, productos en detalle,\n"
-    "    sostenibilidad, ciencia médica, cultura corporativa, valores, o "
-    "    cualquier tema que requiera comprensión del corpus indexado.\n"
-    "Responde sólo con la clasificación; no expliques tu decisión."
+    "Eres el clasificador del router del agente TQ-Asistente de Tecnoquímicas "
+    "S.A.\n\n"
+    "Debajo está el historial reciente de la conversación (puede estar vacío "
+    "en el primer turno) seguido de la NUEVA pregunta del usuario al final. "
+    "Decide cuál herramienta disparar para responder esa NUEVA pregunta:\n\n"
+    "- 'direct': la respuesta se puede dar SÓLO desde la conversación previa "
+    "(referencia a turnos anteriores como '¿y por qué?', 'explícame eso', "
+    "'¿cuál fue el segundo punto?'), O es una interacción social que no "
+    "requiere datos del corpus (saludos, agradecimientos, despedidas, "
+    "preguntas meta).\n"
+    "- 'structured': la NUEVA pregunta pide un dato exacto y verificado "
+    "(teléfono, horario, NIT, dirección de sedes, lista de marcas, línea "
+    "ética, portal de empleo).\n"
+    "- 'rag': la NUEVA pregunta requiere comprensión semántica del corpus "
+    "(historia de la empresa, productos en detalle, ciencia médica, "
+    "sostenibilidad, cultura corporativa).\n\n"
+    "Responde con la clasificación; no expliques tu decisión."
 )
+
+# Cuántos mensajes recientes se le pasan al router. Acotamos para no inflar
+# el context window del clasificador en hilos largos — la decisión 'direct'
+# usualmente depende del último intercambio, no de toda la historia.
+_ROUTER_HISTORY_WINDOW = 6
 
 STRUCTURED_RESPONSE_SYSTEM = (
     "Eres TQ-Asistente, el agente oficial de Tecnoquímicas S.A.\n"
     "Responde de forma directa, clara y profesional en español.\n"
     "Presenta la información de forma ordenada. Máximo 4 oraciones."
+)
+
+DIRECT_SYSTEM = (
+    "Eres TQ-Asistente, el agente oficial de Tecnoquímicas S.A.\n"
+    "El usuario te hace una pregunta que se puede responder usando sólo la "
+    "conversación previa (clarificación, referencia a turnos anteriores) o "
+    "una interacción social (saludo, agradecimiento, despedida).\n"
+    "Responde en español, breve y directo. NO inventes datos sobre "
+    "Tecnoquímicas si no aparecieron en la conversación — si la pregunta "
+    "requiere información que no tenés, pedile al usuario que reformule."
 )
 
 # Source sintético — el frontend lo muestra como una fuente más en el footer.
@@ -70,9 +96,14 @@ def make_classify_node(deps: GraphDeps):
     router_llm = make_router_llm(deps.settings).with_structured_output(RouteDecision)
 
     async def classify_node(state: ChatState) -> dict:
+        # Pasamos el historial reciente al router para que pueda decidir
+        # 'direct' cuando la pregunta refiere a turnos anteriores.
+        history = state.get("messages") or []
+        recent = history[-_ROUTER_HISTORY_WINDOW:]
         decision: RouteDecision = await router_llm.ainvoke(
             [
                 SystemMessage(content=ROUTER_SYSTEM),
+                *recent,
                 HumanMessage(content=state["question"]),
             ]
         )
@@ -81,11 +112,23 @@ def make_classify_node(deps: GraphDeps):
     return classify_node
 
 
+def make_direct_node(deps: GraphDeps):
+    async def direct_node(state: ChatState) -> dict:
+        # No retrieval, no herramienta. El LLM contesta con la historia que
+        # ya tiene en state["messages"] (cargada por el checkpointer).
+        # `context` se setea a la pregunta cruda para que generate_node la use
+        # como HumanMessage final, sin envolverla en bloques de contexto.
+        return {"context": state["question"], "sources": []}
+
+    return direct_node
+
+
 def make_structured_node(deps: GraphDeps):
     async def structured_node(state: ChatState) -> dict:
         data = get_structured_data(state["question"])
         context = (
             f"Información disponible sobre Tecnoquímicas:\n\n{data}\n\n"
+            f"Pregunta del usuario: {state['question']}\n\n"
             "Responde de forma directa usando la información anterior."
         )
         return {"context": context, "sources": [_STRUCTURED_SOURCE]}
@@ -138,18 +181,22 @@ def make_retrieve_node(deps: GraphDeps):
     return retrieve_node
 
 
+def _system_for_route(route: str | None) -> str:
+    if route == "structured":
+        return STRUCTURED_RESPONSE_SYSTEM
+    if route == "direct":
+        return DIRECT_SYSTEM
+    # RAG es el default — carga las reglas pesadas (citas, protocolo
+    # TOTAL/PARCIAL/NULA/SENSIBLE) porque la respuesta sale del corpus.
+    return SYSTEM_PROMPT
+
+
 def make_generate_node(deps: GraphDeps):
     async def generate_node(state: ChatState) -> dict:
-        # El system prompt difiere entre ramas — RAG carga las reglas pesadas
-        # (citas, protocolo TOTAL/PARCIAL/NULA/SENSIBLE); la rama estructurada
-        # es más liviana porque la herramienta ya garantizó precisión.
-        system = (
-            STRUCTURED_RESPONSE_SYSTEM
-            if state.get("route") == "structured"
-            else SYSTEM_PROMPT
-        )
-        # `messages` viene del checkpointer; prepend como historial antes del
-        # prompt cargado (que ya contiene la pregunta + contexto).
+        system = _system_for_route(state.get("route"))
+        # `messages` viene del checkpointer; prepend como historial antes
+        # del HumanMessage cargado (`context` ya incluye la pregunta o un
+        # bloque que la engloba).
         history = state.get("messages") or []
         # Cada invocación del grafo construye un ChatOllama con la temperatura
         # del turno. ChatOllama es barato de instanciar (configura un cliente
@@ -182,4 +229,9 @@ def make_generate_node(deps: GraphDeps):
 
 def route_branch(state: ChatState) -> str:
     """Conditional edge — mapea state['route'] al nodo siguiente."""
-    return "structured" if state.get("route") == "structured" else "rag"
+    route = state.get("route")
+    if route == "structured":
+        return "structured"
+    if route == "direct":
+        return "direct"
+    return "rag"

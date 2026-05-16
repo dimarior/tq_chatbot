@@ -16,24 +16,28 @@ from pydantic import BaseModel, Field
 from apps.api.schemas import Source
 
 
-Route = Literal["structured", "rag"]
+Route = Literal["direct", "structured", "rag"]
 
 
 class RouteDecision(BaseModel):
     """Salida estructurada del clasificador del router.
 
     Pydantic + ChatOllama.with_structured_output garantiza que el LLM
-    responda exactamente 'structured' o 'rag'. Cualquier otra cosa la
+    responda exactamente uno de los tres valores. Cualquier otra cosa la
     captura el validador.
     """
 
     route: Route = Field(
         ...,
         description=(
-            "'structured' si la pregunta pide un dato concreto y verificado "
-            "(teléfono, horario, NIT, dirección, marcas, línea ética, portal "
-            "de empleo). 'rag' si requiere comprensión semántica del corpus "
-            "(historia, productos en detalle, sostenibilidad, ciencia, cultura)."
+            "'direct' si la pregunta se puede responder usando sólo la "
+            "conversación previa (referencias a turnos anteriores, "
+            "aclaraciones) o es una interacción social que no requiere datos "
+            "del corpus (saludos, agradecimientos, despedidas). "
+            "'structured' si pide un dato concreto y verificado (teléfono, "
+            "horario, NIT, dirección, marcas, línea ética, portal de empleo). "
+            "'rag' si requiere comprensión semántica del corpus (historia, "
+            "productos en detalle, sostenibilidad, ciencia, cultura)."
         ),
     )
 

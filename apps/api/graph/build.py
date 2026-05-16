@@ -9,6 +9,7 @@ from apps.api.core.config import Settings
 from apps.api.graph.nodes import (
     GraphDeps,
     make_classify_node,
+    make_direct_node,
     make_generate_node,
     make_retrieve_node,
     make_structured_node,
@@ -32,6 +33,7 @@ def build_graph(
 
     builder = StateGraph(ChatState)
     builder.add_node("classify", make_classify_node(deps))
+    builder.add_node("direct", make_direct_node(deps))
     builder.add_node("structured", make_structured_node(deps))
     builder.add_node("retrieve", make_retrieve_node(deps))
     builder.add_node("generate", make_generate_node(deps))
@@ -40,8 +42,9 @@ def build_graph(
     builder.add_conditional_edges(
         "classify",
         route_branch,
-        {"structured": "structured", "rag": "retrieve"},
+        {"direct": "direct", "structured": "structured", "rag": "retrieve"},
     )
+    builder.add_edge("direct", "generate")
     builder.add_edge("structured", "generate")
     builder.add_edge("retrieve", "generate")
     builder.add_edge("generate", END)

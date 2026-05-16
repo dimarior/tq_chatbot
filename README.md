@@ -256,13 +256,21 @@ La orquestación del agente (router, retrieval, generación y memoria por hilo) 
 
 ```mermaid
 flowchart TD
-    START([START]) --> CL[classify_node<br/>ChatOllama.with_structured_output]
+    START([START]) --> CL[classify_node<br/>ChatOllama.with_structured_output<br/>recibe pregunta + últimos 6 mensajes]
+    CL -->|route=direct| DR[direct_node<br/>sin retrieval, sin herramienta]
     CL -->|route=structured| ST[structured_node]
     CL -->|route=rag| RT[retrieve_node<br/>Chroma.similarity_search]
-    ST --> GN[generate_node<br/>ChatOllama.astream]
+    DR --> GN[generate_node<br/>ChatOllama.astream]
+    ST --> GN
     RT --> GN
     GN --> END([END])
 ```
+
+**El router toma 3 decisiones, no 2.** El gap del primer diseño era que cada turno disparaba Chroma o el JSON estructurado, incluso cuando la respuesta ya vivía en el historial. Ahora `classify_node` recibe los últimos 6 mensajes del hilo (vía el checkpointer) además de la pregunta nueva, y elige:
+
+- **`direct`** — la respuesta sale del historial (follow-up tipo "¿y por qué?", "explícame eso") o es una interacción social (saludo, agradecimiento). Sin retrieval, sin herramienta, sin chips de fuente.
+- **`structured`** — pregunta de dato exacto: teléfono, NIT, horario, sede, marcas, etc. Dispara `get_structured_data()` y emite el chip sintético `datos_estructurados.json`.
+- **`rag`** — pregunta abierta sobre el corpus. Dispara `Chroma.similarity_search_with_score`, transforma L2 → `1/(1+L2)`, filtra por `min_score`, emite los chips reales con URL + score.
 
 **Memoria por hilo.** `AsyncPostgresSaver` corre `setup()` la primera vez y crea las tablas `checkpoints`, `checkpoint_blobs` y `checkpoint_writes` en la misma base de datos que `conversations`/`messages` (responsabilidades distintas: las primeras son estado del grafo; las segundas son lo que renderiza la UI). Cada turno se invoca el grafo con `configurable={"thread_id": <uuid>}`; LangGraph carga el estado previo, ejecuta los nodos y guarda el nuevo state. El reductor `add_messages` del campo `messages` se encarga del append idempotente.
 

@@ -17,7 +17,7 @@ This is a clean rewrite (2026-05). Evolución histórica relevante:
 ```
 apps/api/        FastAPI service (core/, routers/, rag/, llm/, graph/)
                    routers: chat_v2 (SSE — traduce graph.astream a SSE), health, threads
-                   graph/   → StateGraph: classify → (structured|retrieve) → generate
+                   graph/   → StateGraph: classify → (direct|structured|retrieve) → generate
                    rag/retriever.py → wrap thin sobre Chroma.similarity_search_with_score
                    rag/corpus_stats.py → cuenta noticias en la metadata de Chroma
                    core/db.py → Database (aiosqlite) con schema in-line + WAL
