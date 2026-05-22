@@ -1,5 +1,10 @@
 # Quickstart sin Docker. Sólo Ollama tiene que correr aparte (host).
 
+# OpenFang se instala en ~/.openfang/bin; make corre las recetas con /bin/sh
+# (que NO lee ~/.zshrc) y a veces hace exec directo, así que resolvemos el
+# binario explícitamente: lo busca en el PATH y si no cae al path del instalador.
+OPENFANG := $(shell command -v openfang 2>/dev/null || echo $(HOME)/.openfang/bin/openfang)
+
 # ── Instalación ──────────────────────────────
 install:
 	uv sync
@@ -48,7 +53,7 @@ of-config:
 
 # Arranca el daemon (dashboard en http://127.0.0.1:4200). Carga openfang/.env.
 of-start:
-	set -a; [ -f openfang/.env ] && . ./openfang/.env; set +a; openfang start
+	set -a; [ -f openfang/.env ] && . ./openfang/.env; set +a; $(OPENFANG) start
 
 # Inyecta el conocimiento corporativo (KV vía REST + corpus al vector store)
 of-migrate:
@@ -57,7 +62,7 @@ of-migrate:
 
 # Activa el hand autónomo de inteligencia competitiva
 of-hand:
-	openfang hand activate collector-tq
+	$(OPENFANG) hand activate collector-tq
 
 # Arranca el gateway QR de WhatsApp (puerto 3009). OPENFANG_SRC = clon del repo OpenFang.
 of-whatsapp:
@@ -66,11 +71,11 @@ of-whatsapp:
 
 # Estado del daemon + de los hands activos
 of-status:
-	openfang status
-	-openfang hand active
+	$(OPENFANG) status
+	-$(OPENFANG) hand active
 
 of-doctor:
-	openfang doctor
+	$(OPENFANG) doctor
 
 # ── Bonus: análisis t-SNE/UMAP de intenciones ────────────────────────────────
 tsne:
