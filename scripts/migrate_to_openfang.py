@@ -223,7 +223,7 @@ def _fact_sentences(data: dict) -> list[tuple[str, str]]:
     )
     return [
         ("contacto", f"Contacto de Tecnoquímicas (TQ Confiable): Línea de Servicio al Cliente {c['telefono_cliente']}. Línea Ética {c['linea_etica']} (24/7). Correo {c['email_cliente']}. Horario de atención: {c['horario_atencion']}. Sitio web {c['sitio_web']}, portal médico {c['portal_medico']}."),
-        ("identidad", f"Tecnoquímicas S.A. (nombre comercial TQ Confiable). NIT {e['nit']}. Fundada en {e['fundacion']} (originalmente {e['nombre_original']}), con {e['anos_trayectoria']} años de trayectoria, {e['colaboradores']} colaboradores y presencia en {e['paises_presencia']} países."),
+        ("identidad", f"Tecnoquímicas S.A. (nombre comercial TQ Confiable). NIT {e['nit']}. Historia y fundación: la empresa se fundó en {e['fundacion']}; año de fundación {e['fundacion']} (originalmente {e['nombre_original']}). Tiene {e['anos_trayectoria']} años de trayectoria, {e['colaboradores']} colaboradores y presencia en {e['paises_presencia']} países."),
         ("sedes", f"Sedes de Tecnoquímicas: {sedes}. La sede principal y planta de manufactura está en Cali, Valle del Cauca."),
         ("marcas", f"Marcas de Tecnoquímicas: {', '.join(data['marcas'])}."),
         ("lineas_negocio", f"Líneas de negocio de Tecnoquímicas: {'; '.join(data['lineas_negocio'])}."),
