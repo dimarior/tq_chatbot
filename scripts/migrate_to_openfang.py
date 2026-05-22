@@ -247,15 +247,20 @@ def _fact_sentences(data: dict) -> list[tuple[str, str]]:
         f"{s['ciudad']} ({s['departamento']})" + (f": {s['direccion']}" if s.get("direccion") else "")
         for s in data["sedes"].values()
     )
+    # Cada hecho ARRANCA con frases/keywords tipo-pregunta (query expansion): el
+    # recall de OpenFang embebe la consulta cruda del usuario y la matchea por
+    # coseno contra estos textos; incluir las formas en que se pregunta hace que
+    # fraseos variados (minúsculas, sin tildes, "busca...", etc.) igual acierten.
+    s = data.get("sostenibilidad", {})
     return [
-        ("contacto", f"Contacto de Tecnoquímicas (TQ Confiable): Línea de Servicio al Cliente {c['telefono_cliente']}. Línea Ética {c['linea_etica']} (24/7). Correo {c['email_cliente']}. Horario de atención: {c['horario_atencion']}. Sitio web {c['sitio_web']}, portal médico {c['portal_medico']}."),
-        ("fundacion", f"Fundación de Tecnoquímicas: la empresa se fundó en {e['fundacion']} (originalmente «{e['nombre_original']}»). Año de fundación: {e['fundacion']}. Más de {e['anos_trayectoria']} años de historia y trayectoria."),
-        ("identidad", f"Razón social: Tecnoquímicas S.A., nombre comercial TQ Confiable. NIT {e['nit']}. {e['colaboradores']} colaboradores, presencia en {e['paises_presencia']} países y {e['referencias_productos']} referencias de producto."),
-        ("sedes", f"Sedes de Tecnoquímicas: {sedes}. La sede principal y planta de manufactura está en Cali, Valle del Cauca."),
-        ("marcas", f"Marcas de Tecnoquímicas: {', '.join(data['marcas'])}."),
-        ("lineas_negocio", f"Líneas de negocio de Tecnoquímicas: {'; '.join(data['lineas_negocio'])}."),
-        ("empleo", f"Empleo en Tecnoquímicas: portal de ofertas {data['empleo']['portal_ofertas']}. Programa para universitarios: {data['empleo']['programa_universitarios']}. Beneficios: {data['empleo']['programa_beneficios']}."),
-        ("sostenibilidad", f"Sostenibilidad de Tecnoquímicas: {s.get('programa_planeta','')}; {s.get('programa_gente','')}; Centro de Desarrollo Infantil (CED-TQ) para hijos de colaboradores." if (s := data.get("sostenibilidad", {})) else "Tecnoquímicas tiene programas de sostenibilidad ambiental y social."),
+        ("contacto", f"Cómo contactar a Tecnoquímicas, teléfono, número, correo, email, línea de atención, línea ética, horario de atención. Servicio al Cliente {c['telefono_cliente']}; Línea Ética {c['linea_etica']} (24/7); correo {c['email_cliente']}; horario {c['horario_atencion']}; web {c['sitio_web']}; portal médico {c['portal_medico']}."),
+        ("fundacion", f"En qué año se fundó Tecnoquímicas, cuándo se fundó, cuándo se creó, año de fundación, origen, historia, fundación. Tecnoquímicas se fundó en {e['fundacion']} (originalmente «{e['nombre_original']}»). Año de fundación: {e['fundacion']}. Más de {e['anos_trayectoria']} años de trayectoria."),
+        ("identidad", f"Cuál es el NIT, razón social, nombre, cuántos colaboradores, en cuántos países está Tecnoquímicas. Razón social: Tecnoquímicas S.A. (TQ Confiable). NIT {e['nit']}. {e['colaboradores']} colaboradores, presencia en {e['paises_presencia']} países, {e['referencias_productos']} referencias de producto."),
+        ("sedes", f"Dónde queda Tecnoquímicas, ubicación, dirección, sede principal, planta, oficinas, ciudad. Sedes: {sedes}. La sede principal y planta de manufactura está en Cali, Valle del Cauca."),
+        ("marcas", f"Qué marcas tiene Tecnoquímicas, cuáles son sus marcas, productos, portafolio. Las marcas de Tecnoquímicas son: {', '.join(data['marcas'])}."),
+        ("lineas_negocio", f"A qué se dedica Tecnoquímicas, líneas de negocio, sectores, qué hace. Líneas de negocio de Tecnoquímicas: {'; '.join(data['lineas_negocio'])}."),
+        ("empleo", f"Cómo trabajar en Tecnoquímicas, empleo, vacantes, ofertas de trabajo, programa para universitarios. Portal de ofertas: {data['empleo']['portal_ofertas']}. Programa para universitarios: {data['empleo']['programa_universitarios']}. Beneficios: {data['empleo']['programa_beneficios']}."),
+        ("sostenibilidad", f"Qué hace Tecnoquímicas en sostenibilidad, medio ambiente, programas sociales. {s.get('programa_planeta','')}; {s.get('programa_gente','')}; Centro de Desarrollo Infantil (CED-TQ) para hijos de colaboradores." if s else "Sostenibilidad: Tecnoquímicas tiene programas ambientales y sociales."),
     ]
 
 
@@ -344,6 +349,7 @@ def ingest_corpus(conn, agent_id: str, url_hashes: dict[str, str], dry_run: bool
                 {"url": url, "title": doc.get("title"), "source": doc.get("source"),
                  "content_hash": content_hash, "chunk_index": i},
                 now,
+                embedding=_embed(txt),  # sin embedding, el recall vectorial de OpenFang ignora el chunk
             )
             for i, txt in enumerate(chunks)
         ]
