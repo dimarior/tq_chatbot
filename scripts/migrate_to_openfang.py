@@ -58,10 +58,12 @@ OPENFANG_DB = Path(
 AGENT_MANIFEST = ROOT / "openfang" / "agents" / "tq-asistente" / "agent.toml"
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-# Modelo de embeddings que OpenFang usa para el recall (ollama local, auto-detectado
-# cuando no hay clave cloud). Debe coincidir con el que indexa aquí para que el
-# coseno tenga sentido. Pull: `ollama pull nomic-embed-text`.
-EMBED_MODEL = os.environ.get("OPENFANG_EMBED_MODEL", "nomic-embed-text")
+# Modelo de embeddings. DEBE coincidir con el [memory].embedding_model de
+# openfang/config.toml para que el coseno tenga sentido. Usamos
+# qwen3-embedding:0.6b (1024-dim, el del Módulo 2): discrimina mucho mejor en
+# español que el nomic-embed-text por defecto de OpenFang (con nomic el recall
+# era basura — scores apelmazados). qwen3-embedding funciona sin prefijos.
+EMBED_MODEL = os.environ.get("OPENFANG_EMBED_MODEL", "qwen3-embedding:0.6b")
 
 SCOPE = "corporate_knowledge"
 # MemorySource::System serializado (openfang-memory/src/semantic.rs). Si no

@@ -30,7 +30,9 @@ base_url = "http://localhost:11434/v1"
 # El embedder semántico es interno (all-MiniLM-L6-v2); el recall por defecto usa
 # match de texto (LIKE) con re-ranking coseno cuando hay embedding de consulta.
 [memory]
-embedding_model = "all-MiniLM-L6-v2"
+# qwen3-embedding:0.6b (1024-dim) — el mismo embedding del Módulo 2, mejor en
+# español que el nomic-embed-text que OpenFang usa por defecto.
+embedding_model = "qwen3-embedding:0.6b"
 # sqlite_path se omite a propósito: OpenFang resuelve su default
 # (~/.openfang/data/openfang.db) correctamente. Poner "~" literal aquí NO se
 # expande y rompe el arranque ("Database error"). El script de migración usa
