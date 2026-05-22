@@ -52,8 +52,12 @@ of-config:
 	@echo "OK -> ~/.openfang (config + agente tq-asistente + hand collector-tq)"
 
 # Arranca el daemon (dashboard en http://127.0.0.1:4200). Carga openfang/.env.
+# Quitamos OPENAI_API_KEY del entorno del daemon a propósito: si está presente,
+# OpenFang usa OpenAI para los EMBEDDINGS (manda texto fuera de la máquina y rompe
+# la soberanía de datos) en vez del modelo local. Sin la clave usa Ollama
+# (nomic-embed-text), que es lo que indexamos en la migración.
 of-start:
-	set -a; [ -f openfang/.env ] && . ./openfang/.env; set +a; $(OPENFANG) start
+	set -a; [ -f openfang/.env ] && . ./openfang/.env; set +a; env -u OPENAI_API_KEY $(OPENFANG) start
 
 # Inyecta el conocimiento corporativo (KV vía REST + corpus al vector store)
 of-migrate:

@@ -33,6 +33,7 @@ import logging
 import os
 import re
 import sqlite3
+import struct
 import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -55,6 +56,12 @@ OPENFANG_DB = Path(
     os.environ.get("OPENFANG_DB", "~/.openfang/data/openfang.db")
 ).expanduser()
 AGENT_MANIFEST = ROOT / "openfang" / "agents" / "tq-asistente" / "agent.toml"
+
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+# Modelo de embeddings que OpenFang usa para el recall (ollama local, auto-detectado
+# cuando no hay clave cloud). Debe coincidir con el que indexa aquí para que el
+# coseno tenga sentido. Pull: `ollama pull nomic-embed-text`.
+EMBED_MODEL = os.environ.get("OPENFANG_EMBED_MODEL", "nomic-embed-text")
 
 SCOPE = "corporate_knowledge"
 # MemorySource::System serializado (openfang-memory/src/semantic.rs). Si no
@@ -100,10 +107,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _memory_row(mem_id: str, agent_id: str, content: str, metadata: dict, now: str) -> tuple:
+def _embed(text: str) -> bytes | None:
+    """Embebe `text` con el modelo local de Ollama y lo serializa como BLOB de
+    f32 little-endian (el formato que lee la tabla `memories` de OpenFang).
+    Devuelve None si Ollama o el modelo no están disponibles."""
+    try:
+        r = httpx.post(
+            f"{OLLAMA_HOST}/api/embeddings",
+            json={"model": EMBED_MODEL, "prompt": text},
+            timeout=30,
+        )
+        r.raise_for_status()
+        vec = r.json()["embedding"]
+    except (httpx.HTTPError, KeyError) as e:
+        LOG.warning("no pude embeber con %s (%s); guardo sin embedding", EMBED_MODEL, e)
+        return None
+    return struct.pack(f"<{len(vec)}f", *vec)
+
+
+def _memory_row(mem_id: str, agent_id: str, content: str, metadata: dict, now: str,
+                embedding: bytes | None = None) -> tuple:
     return (
         mem_id, agent_id, content, DEFAULT_SOURCE, SCOPE, DEFAULT_CONFIDENCE,
-        json.dumps(metadata, ensure_ascii=False), now, now, 0, 0, None,
+        json.dumps(metadata, ensure_ascii=False), now, now, 0, 0, embedding,
     )
 
 
@@ -223,11 +249,13 @@ def _fact_sentences(data: dict) -> list[tuple[str, str]]:
     )
     return [
         ("contacto", f"Contacto de Tecnoquímicas (TQ Confiable): Línea de Servicio al Cliente {c['telefono_cliente']}. Línea Ética {c['linea_etica']} (24/7). Correo {c['email_cliente']}. Horario de atención: {c['horario_atencion']}. Sitio web {c['sitio_web']}, portal médico {c['portal_medico']}."),
-        ("identidad", f"Tecnoquímicas S.A. (nombre comercial TQ Confiable). NIT {e['nit']}. Historia y fundación: la empresa se fundó en {e['fundacion']}; año de fundación {e['fundacion']} (originalmente {e['nombre_original']}). Tiene {e['anos_trayectoria']} años de trayectoria, {e['colaboradores']} colaboradores y presencia en {e['paises_presencia']} países."),
+        ("fundacion", f"Fundación de Tecnoquímicas: la empresa se fundó en {e['fundacion']} (originalmente «{e['nombre_original']}»). Año de fundación: {e['fundacion']}. Más de {e['anos_trayectoria']} años de historia y trayectoria."),
+        ("identidad", f"Razón social: Tecnoquímicas S.A., nombre comercial TQ Confiable. NIT {e['nit']}. {e['colaboradores']} colaboradores, presencia en {e['paises_presencia']} países y {e['referencias_productos']} referencias de producto."),
         ("sedes", f"Sedes de Tecnoquímicas: {sedes}. La sede principal y planta de manufactura está en Cali, Valle del Cauca."),
         ("marcas", f"Marcas de Tecnoquímicas: {', '.join(data['marcas'])}."),
         ("lineas_negocio", f"Líneas de negocio de Tecnoquímicas: {'; '.join(data['lineas_negocio'])}."),
         ("empleo", f"Empleo en Tecnoquímicas: portal de ofertas {data['empleo']['portal_ofertas']}. Programa para universitarios: {data['empleo']['programa_universitarios']}. Beneficios: {data['empleo']['programa_beneficios']}."),
+        ("sostenibilidad", f"Sostenibilidad de Tecnoquímicas: {s.get('programa_planeta','')}; {s.get('programa_gente','')}; Centro de Desarrollo Infantil (CED-TQ) para hijos de colaboradores." if (s := data.get("sostenibilidad", {})) else "Tecnoquímicas tiene programas de sostenibilidad ambiental y social."),
     ]
 
 
@@ -246,11 +274,12 @@ def seed_facts(conn, agent_id: str, data: dict, dry_run: bool) -> int:
             {"url": f"tq://facts/{key}", "title": f"Dato verificado: {key}",
              "source": "datos_estructurados", "kind": "fact"},
             now,
+            embedding=_embed(text),
         )
         for key, text in facts
     ]
     conn.executemany(_INSERT_SQL, rows)
-    LOG.info("vector store: %d frases de hechos sembradas", len(facts))
+    LOG.info("vector store: %d frases de hechos sembradas (con embedding)", len(facts))
     return len(facts)
 
 
@@ -356,11 +385,15 @@ def main() -> int:
                 LOG.info("Vector store: %s", ingest_corpus(None, agent_id, {}, dry_run=True))
         else:
             with client.connection() as conn:
-                if not args.skip_kv:
-                    seed_facts(conn, agent_id, data, dry_run=False)
                 if not args.skip_corpus:
                     url_hashes = load_url_hashes(conn)
                     LOG.info("Vector store: %s", ingest_corpus(conn, agent_id, url_hashes, dry_run=False))
+                # Las frases de hechos se siembran AL FINAL a propósito: el recall de
+                # OpenFang preselecciona candidatos por accessed_at DESC (tope ~100),
+                # así que ser las más recientes garantiza que entren a ese conjunto y
+                # el coseno (con su embedding) las devuelva.
+                if not args.skip_kv:
+                    seed_facts(conn, agent_id, data, dry_run=False)
     except httpx.HTTPError as e:
         LOG.error("error de API de OpenFang: %s", e)
         LOG.error("¿está corriendo el daemon? -> `openfang start`")
