@@ -41,3 +41,8 @@ chroma_db/
 # Persistencia local (SQLite + WAL/shm)
 tq.db
 tq.db-*
+
+# OpenFang (Módulo 3) — secretos y artefactos generados
+openfang/.env
+.ipynb_checkpoints/
+notebooks/*.png

@@ -1,0 +1,75 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenFang Agent OS — configuración de TQ-Asistente (Módulo 3, Ruta B)
+#
+# Fuente de verdad versionada. Se copia/symlinka a ~/.openfang/config.toml
+# (ver `make of-config`). OpenFang lee SIEMPRE de ~/.openfang/config.toml
+# (o de la ruta pasada con `--config`), nunca de este archivo directamente.
+#
+# Los SECRETOS nunca van aquí: los campos *_env nombran la variable de entorno
+# que contiene el token. Carga las variables desde openfang/.env (ver .env.example).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dirección del API + dashboard + WebChat. La doc de OpenFang es inconsistente
+# (el ejemplo trae 50051, el dashboard/WebChat y el gateway de WhatsApp asumen
+# 4200). Lo fijamos explícito en 4200 para que todo (dashboard, /v1, gateway
+# de WhatsApp con OPENFANG_URL) quede alineado. Loopback = sólo máquina local.
+api_listen = "127.0.0.1:4200"
+
+# Vacío = sin auth (sólo localhost, CORS restringido). Para la demo local basta.
+api_key = ""
+
+# ── Modelo por defecto: 100% local vía Ollama (soberanía de datos del enunciado)
+# Ollama es un proveedor OpenAI-compatible; OpenFang auto-descubre los modelos
+# que ya tienes con `ollama pull`. No requiere API key.
+[default_model]
+provider = "ollama"
+model = "qwen3:8b"
+base_url = "http://localhost:11434/v1"
+
+# ── Memoria (substrato SQLite de 6 capas: KV · vector · grafo · sesiones · tareas · canónicas)
+# El embedder semántico es interno (all-MiniLM-L6-v2); el recall por defecto usa
+# match de texto (LIKE) con re-ranking coseno cuando hay embedding de consulta.
+[memory]
+embedding_model = "all-MiniLM-L6-v2"
+# sqlite_path se omite a propósito: OpenFang resuelve su default
+# (~/.openfang/data/openfang.db) correctamente. Poner "~" literal aquí NO se
+# expande y rompe el arranque ("Database error"). El script de migración usa
+# el mismo default vía Path.expanduser().
+decay_rate = 0.05
+
+# ── Canal Telegram (puente nativo, long-polling — sin URL pública)
+# Token desde @BotFather en la env var TELEGRAM_BOT_TOKEN.
+[channels.telegram]
+bot_token_env = "TELEGRAM_BOT_TOKEN"
+default_agent = "tq-asistente"
+allowed_users = []            # vacío = todos
+
+[channels.telegram.overrides]
+output_format = "telegram_html"
+dm_policy = "respond"
+group_policy = "mention_only"
+
+# ── Canal WhatsApp (modo "web": gateway QR en el puerto 3009, como pide el enunciado)
+# Vincula tu WhatsApp personal escaneando un QR (como WhatsApp Web). El gateway
+# Node vive en el repo fuente de OpenFang (packages/whatsapp-gateway) y se arranca
+# aparte (ver `make of-whatsapp`). OpenFang lo encuentra vía WHATSAPP_WEB_GATEWAY_URL.
+#
+# Alternativa "cloud_api": requiere cuenta Meta Business + webhook público
+# (WA_ACCESS_TOKEN/WA_PHONE_ID/WA_VERIFY_TOKEN, webhook_port). No la usamos:
+# para la demo en vivo el modo web es mucho más simple.
+[channels.whatsapp]
+mode = "web"
+default_agent = "tq-asistente"
+
+[channels.whatsapp.overrides]
+dm_policy = "respond"
+group_policy = "mention_only"
+
+# ── Enrutamiento de mensajes: ambos canales caen al agente conversacional TQ.
+[[bindings]]
+agent = "tq-asistente"
+match_rule = { channel = "telegram" }
+
+[[bindings]]
+agent = "tq-asistente"
+match_rule = { channel = "whatsapp" }
