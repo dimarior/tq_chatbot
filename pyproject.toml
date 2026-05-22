@@ -30,5 +30,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["apps"]
 
-[tool.uv]
-dev-dependencies = []
+# Dependencias del bonus t-SNE/UMAP (notebooks/intent_tsne.ipynb).
+# Instalar/ejecutar con:  uv run --group notebooks ...
+[dependency-groups]
+notebooks = [
+    "scikit-learn>=1.5.0",
+    "umap-learn>=0.5.6",
+    "matplotlib>=3.9.0",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "jupyter>=1.1.0",
+    "nbconvert>=7.16.0",
+]
