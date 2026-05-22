@@ -41,7 +41,7 @@ clean:
 #  Antes de of-start/of-migrate/of-whatsapp: copia openfang/.env.example a
 #  openfang/.env y rellena el TELEGRAM_BOT_TOKEN.
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: of-config of-start of-migrate of-hand of-whatsapp of-status of-doctor tsne
+.PHONY: of-config of-start of-migrate of-reload-agent of-hand of-whatsapp of-status of-doctor tsne
 
 # Copia la config/agente/hand versionados a ~/.openfang (fuente de verdad = repo)
 of-config:
@@ -59,6 +59,12 @@ of-start:
 of-migrate:
 	set -a; [ -f openfang/.env ] && . ./openfang/.env; set +a; \
 	uv run python scripts/migrate_to_openfang.py
+
+# Re-aplica cambios de openfang/agents/tq-asistente/agent.toml preservando la
+# memoria (OpenFang no actualiza el manifiesto en caliente: recrea el agente y
+# re-etiqueta sus memorias). La sesión de conversación se reinicia.
+of-reload-agent: of-config
+	uv run python scripts/reload_agent.py
 
 # Activa el hand autónomo de inteligencia competitiva
 of-hand:
