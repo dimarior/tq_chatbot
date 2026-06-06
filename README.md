@@ -448,6 +448,9 @@ Las sesiones son **cross-channel**: el mismo usuario puede continuar una convers
 | Autonomía | Hand `collector-tq` (OSINT farmacéutico 24/7) |
 | Configuración | `config.toml` + `agent.toml` + `HAND.toml` |
 
+> 📄 Documentación detallada del Agent OS en [`openfang/README.md`](openfang/README.md) — incluye runbook completo, notas de implementación aprendidas en runtime y verificación end-to-end realizada.
+> 📄 Informe técnico del Módulo 3 en [`docs/informe-final.md`](docs/informe-final.md) 
+
 ---
 
 ## Quickstart M3 (estado actual)
@@ -543,7 +546,8 @@ make tsne
 │   ├── routers/               chat_v2.py + threads.py + health.py
 │   ├── tools/                 structured_tool.py
 │   └── datos_estructurados.json
-├── openfang/                  Módulo 3 - Agent OS
+├── openfang/                  Módulo 3 — Agent OS (ver openfang/README.md)
+│   ├── README.md              guía detallada: runbook, notas y verificación
 │   ├── config.toml            proveedor Ollama, canales, bindings
 │   ├── .env.example           tokens (TELEGRAM_BOT_TOKEN, LANGSMITH_*)
 │   ├── agents/tq-asistente/
@@ -562,6 +566,7 @@ make tsne
 │   └── intent_umap.png        gráfico UMAP
 ├── data/raw/                  corpus scrapeado (gitignored)
 ├── docs/ARCHITECTURE.md       decisiones técnicas (ADRs) M1→M2→M3
+├── docs/informe-final.md      informe técnico del Módulo 3
 ├── tq_chatbot/                código Módulo 1 (Streamlit + Gemini)
 │   ├── scraper.py
 │   ├── knowledge_base.py
