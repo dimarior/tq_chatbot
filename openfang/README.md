@@ -58,6 +58,13 @@ make of-start            # arranca el daemon → dashboard http://127.0.0.1:4200
 make of-migrate          # inyecta KV (datos exactos) + corpus al vector store
 make of-hand             # activa el Collector autónomo
 
+# Collector — autonomía + demostración (el id del agente se resuelve por nombre):
+make of-schedule         # agenda un cron que dispara el ciclo SOLO (cada 15 min)
+make of-collect          # dispara un ciclo manual ahora (~1-2 min; red de seguridad)
+make of-collector-status # imprime la evidencia: grafo + métricas + reportes
+make of-collector-reset  # limpia los artefactos (pizarra en cero antes de exponer)
+make of-unschedule       # quita el cron tras la demo
+
 # canales:
 #   Telegram → ya activo con TELEGRAM_BOT_TOKEN en el .env; escríbele al bot.
 make of-whatsapp         # arranca el gateway QR (3009); escanea el QR en el dashboard → Channels → WhatsApp
@@ -80,6 +87,15 @@ make of-status           # estado del daemon + del hand
   queda corto en los loops agénticos, sube SÓLO su modelo en `hands/collector-tq/HAND.toml`
   (`[agent].model`) dejando el chat en 8b.
 - **Pre-1.0 (R2):** anota `openfang --version` en el informe; puede haber cambios entre minors.
+- **Autonomía del Collector (cron, no el tick):** OpenFang despierta al hand con
+  un tick genérico ("review shared memory for pending tasks") que con qwen3:8b no
+  arranca el playbook (mira un `pending_tasks` inexistente y se detiene). Por eso
+  la autonomía real se agenda con un **cron de OpenFang** (`make of-schedule`) que
+  le manda el prompt explícito de `hands/collector-tq/cycle_prompt.es.txt` — el
+  mismo que usa el disparo manual `make of-collect`, para no desincronizarse. El
+  prompt está ACOTADO (focus_area=competitor, ≤3 fuentes, tools en orden fijo)
+  para terminar dentro de `max_iterations` sobre el modelo local. Cambia el
+  horario en `scripts/collector_demo.py` (`DEFAULT_SPEC`) o con `--every`.
 - **Hand custom (verificado en 0.6.9):** copiarlo a `~/.openfang/hands/collector-tq/`
   (lo hace `make of-config`) basta — OpenFang lo auto-carga y aparece en
   `openfang hand list`. Alternativa canónica: `openfang hand install openfang/hands/collector-tq`.

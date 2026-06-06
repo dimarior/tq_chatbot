@@ -41,7 +41,7 @@ clean:
 #  Antes de of-start/of-migrate/of-whatsapp: copia openfang/.env.example a
 #  openfang/.env y rellena el TELEGRAM_BOT_TOKEN.
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: of-config of-start of-migrate of-reload-agent of-hand of-whatsapp of-status of-doctor tsne
+.PHONY: of-config of-start of-migrate of-reload-agent of-hand of-collect of-schedule of-unschedule of-collector-status of-collector-reset of-whatsapp of-status of-doctor tsne
 
 # Copia la config/agente/hand versionados a ~/.openfang (fuente de verdad = repo)
 of-config:
@@ -73,6 +73,32 @@ of-reload-agent: of-config
 # Activa el hand autónomo de inteligencia competitiva
 of-hand:
 	$(OPENFANG) hand activate collector-tq
+
+# ── Collector autónomo (inteligencia competitiva) ────────────────────────────
+# El tick autónomo del hand no arranca solo el playbook (prompt genérico); estos
+# targets lo dirigen con un prompt explícito (openfang/hands/collector-tq/
+# cycle_prompt.es.txt) por dos vías: of-schedule (cron, autónomo) y of-collect
+# (manual). of-collector-status imprime la evidencia; of-collector-reset limpia.
+
+# Dispara UN ciclo de recolección ahora (~1-2 min; qwen3:8b es lento).
+of-collect:
+	uv run python scripts/collector_demo.py trigger
+
+# Agenda el ciclo con un cron de OpenFang (default cada 15 min, para la demo).
+of-schedule:
+	uv run python scripts/collector_demo.py schedule
+
+# Quita el cron del collector.
+of-unschedule:
+	uv run python scripts/collector_demo.py unschedule
+
+# Imprime la evidencia: grafo + métricas del dashboard + reportes.
+of-collector-status:
+	uv run python scripts/collector_demo.py status
+
+# Limpia los artefactos del collector (pizarra en cero antes de exponer).
+of-collector-reset:
+	uv run python scripts/collector_demo.py reset
 
 # Arranca el gateway QR de WhatsApp (puerto 3009). OPENFANG_SRC = clon del repo OpenFang.
 of-whatsapp:

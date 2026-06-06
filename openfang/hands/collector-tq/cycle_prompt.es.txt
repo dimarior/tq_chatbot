@@ -1,0 +1,20 @@
+Haz EXACTAMENTE estas llamadas de herramienta, en este orden, sin texto entre medio y SIN preguntas. Trabajo autónomo, español.
+
+1. web_search "Tecnoquímicas Colombia noticias 2026"
+2. web_search "INVIMA alerta sanitaria farmacéutica Colombia 2026"
+   Llama knowledge_add_entity al menos 3 veces. Sus parámetros son en inglés: `name` (texto) y `entity_type`. Usa entity_type "Organization" para empresas y reguladores, y "Document"/"Event" o un tipo libre para productos, lanzamientos o alertas. Ejemplos:
+3. knowledge_add_entity con name="Tecnoquímicas S.A.", entity_type="Organization"
+4. knowledge_add_entity con name="INVIMA", entity_type="Organization"
+5. knowledge_add_entity con name="MK" (o un producto/lanzamiento/alerta real de los pasos 1-2), entity_type="Document"
+6. knowledge_add_relation entre dos entidades (parámetros en inglés: source_entity, relation_type, target_entity), ej.: source_entity="Tecnoquímicas S.A.", relation_type="regulado_por", target_entity="INVIMA"
+7. memory_store collector_tq_data_points = 3   (entero)
+8. memory_store collector_tq_entities_tracked = 3   (entero)
+9. memory_store collector_tq_reports_generated = 1   (entero)
+10. memory_store collector_tq_last_update = "ciclo reciente"
+11. memory_store collector_tq_state = {"cycle_count": 1}
+12. file_write collector_tq_report.md con: encabezado (Sujeto: competidores TQ · Ciclo · Fuentes), 2-3 frases de resumen, una tabla de las entidades con su fuente, y la lista de fuentes.
+
+Fuentes: para cada entidad, usa una URL REAL que haya devuelto web_search/web_fetch en los pasos 1-2; si no tienes una, escribe "conocimiento base TQ". NUNCA inventes URLs ni uses "ejemplo.com".
+Si en los pasos 1-2 aparece un tema sensible (retiro, alerta sanitaria, litigio, salud), trátalo como "señal a verificar" (no hecho confirmado) y remite a INVIMA y a los canales oficiales de TQ.
+
+Al terminar responde sólo: "OK — entidades guardadas: N, fuentes web: M".

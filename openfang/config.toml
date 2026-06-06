@@ -18,9 +18,9 @@ api_listen = "127.0.0.1:4200"
 # Vacío = sin auth (sólo localhost, CORS restringido). Para la demo local basta.
 api_key = ""
 
-# ── Modelo por defecto: 100% local vía Ollama (soberanía de datos del enunciado)
-# Ollama es un proveedor OpenAI-compatible; OpenFang auto-descubre los modelos
-# que ya tienes con `ollama pull`. No requiere API key.
+# ── Modelo por defecto: local vía Ollama. CRÍTICO: el embedder de [memory] HEREDA
+# este endpoint, así que DEBE quedarse en Ollama para que el recall siga local.
+# El chat usa Gemini sólo a nivel del agente (ver agents/tq-asistente/agent.toml).
 [default_model]
 provider = "ollama"
 model = "qwen3:8b"

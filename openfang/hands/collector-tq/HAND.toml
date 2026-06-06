@@ -120,11 +120,16 @@ default = "true"
 name = "collector-tq-hand"
 description = "Recolector de inteligencia competitiva de Tecnoquímicas con técnicas OSINT, grafo de conocimiento y detección de cambios."
 module = "builtin:chat"
-# Local por soberanía de datos. Si qwen3:8b se queda corto en los loops
-# agénticos (R1), sube a un modelo Ollama mayor SÓLO aquí (p.ej. qwen3:14b)
-# dejando el agente conversacional en 8b.
-provider = "ollama"
-model = "qwen3:8b"
+# Chat/razonamiento vía Gemini 2.5 Flash (driver NATIVO de OpenFang, igual que
+# el agente conversacional en agents/tq-asistente/agent.toml). Los loops
+# agénticos del collector (web_search → grafo → reporte) necesitan un modelo
+# fuerte: qwen3:8b local era poco fiable (fabricaba fuentes, no cerraba el ciclo
+# — riesgo R1). El collector sólo procesa datos PÚBLICOS de la web (OSINT), así
+# que la soberanía pesa menos que en el chat (que ya está en Gemini). Los
+# EMBEDDINGS siguen locales: los hereda [default_model]=ollama de config.toml.
+provider = "gemini"
+model = "gemini-2.5-flash"
+api_key_env = "GEMINI_API_KEY"
 max_tokens = 8192
 temperature = 0.3
 # Loops agénticos acotados para una demo fiable sobre modelo local.

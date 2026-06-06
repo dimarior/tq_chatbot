@@ -6,10 +6,12 @@ module = "builtin:chat"
 tags = ["tecnoquimicas", "tqfarma", "soporte", "rag", "espanol"]
 
 [model]
-# 100% local (soberanía de datos). Fijamos proveedor+modelo para que el router
-# NUNCA caiga a un modelo cloud (que no tiene API key). Sin fallback cloud.
-provider = "ollama"
-model = "qwen3:8b"
+# Chat vía Gemini cloud usando el DRIVER NATIVO de OpenFang (provider = "gemini").
+# El driver nativo ya conoce el endpoint: NO se pone base_url. El embedding sigue
+# local porque [default_model] en config.toml se queda en Ollama (el embedder lo hereda).
+provider = "gemini"
+model = "gemini-2.5-flash"
+api_key_env = "GEMINI_API_KEY"
 max_tokens = 4096
 temperature = 0.2
 # Prompt CORTO a propósito: con qwen3:8b un prompt largo y cargado de
