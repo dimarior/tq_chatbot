@@ -1,412 +1,614 @@
-# TQ-Chatbot
+# TQ-Asistente - Agente Corporativo para Tecnoquímicas S.A.
 
-Chatbot RAG sobre Tecnoquímicas S.A. — backend en FastAPI con orquestación LangGraph, LLM local Qwen3-8B vía Ollama, vector store Chroma persistente y persistencia de hilos + memoria del grafo en un único archivo SQLite. Frontend Next.js 15 + assistant-ui en un puerto separado. **Sin Docker**: todo corre como procesos del host.
+> **Módulo 3 (actual):** Agent OS OpenFang - Telegram + WhatsApp + Hand autónomo `collector-tq`.
+> Evolución completa desde un Q&A estático (M1) hasta un agente productivo en canales reales (M3).
 
-> **Estado:** Reescritura completa desde cero (mayo 2026). El proyecto anterior (Streamlit + inyección de KB en prompt) fue reemplazado. Evolución dentro de esta reescritura: pgvector → Chroma → SQLite + LangGraph + LangSmith.
+Sistema conversacional corporativo para **Tecnoquímicas S.A. (TQ Confiable / tqfarma)** construido en tres módulos progresivos como parte del curso *Técnicas Avanzadas de IA Aplicadas en Modelos de Lenguaje* - Maestría en IA y Ciencias de Datos, UAO.
 
-## Objetivos
+**Integrantes:** Daniel Felipe Zamora · Diego Mauricio Ortiz · Jacob González · Jairo Andrés Pérez Hurtatis
+**Profesor:** Jan Polanco Velasco
 
-1. **RAG real**: vector search sobre chunks embebidos en Chroma local, citando fuentes en cada respuesta.
-2. **100 % local**: LLM, embeddings y vector store corren en la máquina del desarrollador (M1 Pro 16 GB target).
-3. **Setup mínimo**: dos procesos (backend + frontend) más Ollama nativo. Cero contenedores, cero servidor de base de datos.
-4. **Pipeline manual e idempotente**: dos scripts (`fetch_sitemaps.py`, `ingest_to_rag.py`) se ejecutan a mano, pueden re-correrse sin efectos secundarios (IDs deterministas vía `uuid5(NAMESPACE_URL, "<url>#<idx>")`).
-5. **Agente con router LLM**: el sistema decide en cada turno entre 3 rutas (`direct` / `structured` / `rag`) usando `ChatOllama.with_structured_output(RouteDecision)`.
-6. **Memoria por hilo via checkpointer**: `AsyncSqliteSaver` mantiene el state del grafo entre turnos, keyed por `thread_id`. Cada turno carga automáticamente el historial.
-7. **Monitoreo off-the-shelf**: LangSmith trazea cada nodo del grafo cuando se activan los env vars `LANGSMITH_*`, sin instrumentación manual.
+---
 
-## Stack
+## Tabla de Contenidos
+
+- [Evolución del Proyecto](#evolución-del-proyecto)
+- [Módulo 1 - Sistema Q&A Semántico](#módulo-1--sistema-qa-semántico)
+- [Módulo 2 - Agente RAG con LangGraph](#módulo-2--agente-rag-con-langgraph)
+- [Módulo 3 - Agent OS con OpenFang](#módulo-3--agent-os-con-openfang)
+- [Quickstart M3 (estado actual)](#quickstart-m3-estado-actual)
+- [Estructura del Repositorio](#estructura-del-repositorio)
+
+---
+
+## Evolución del Proyecto
+
+Cada módulo aplicó la **Navaja de Ockham**: mayor funcionalidad con menor complejidad de infraestructura.
+
+| Componente | M1 | M2 | M3 |
+|---|---|---|---|
+| LLM | Gemini 2.5 Flash (cloud) | Qwen3-8B (local) | Qwen3-8B (local) |
+| Embeddings | Ninguno | Qwen3-Embedding-0.6B | Qwen3-Embedding-0.6B |
+| Vector store | Ninguno | Chroma local | Memoria 6 capas OS |
+| Orquestación | LangChain LCEL | LangGraph StateGraph | OpenFang Agent OS |
+| Memoria | Sin memoria | AsyncSqliteSaver (SQLite) | Checkpointer nativo OS |
+| Interfaz | Streamlit | Next.js 15 + assistant-ui | Telegram + WhatsApp |
+| API | Directa | FastAPI + SSE | Bridges nativos OS |
+| Autonomía | Reactivo | Reactivo | Proactivo (Hand 24/7) |
+| Observabilidad | Ninguna | LangSmith | Dashboard + Hand metrics |
+| Infraestructura | Cloud API | Sin Docker | Binario único ~32 MB |
+| Precisión factual | 80% (20 preguntas) | Router LLM 3 rutas | Protocolo SENSIBLE portado |
+
+---
+
+## Módulo 1 - Sistema Q&A Semántico
+
+**Objetivo:** construir la base de conocimiento corporativo y un sistema Q&A con cero alucinaciones.
+
+### El Problema
+
+Tecnoquímicas - con 90 años de historia, 8.200 colaboradores, presencia en 20+ países y 4.000+ referencias de producto - carecía de un canal automatizado que centralizara su conocimiento para responder consultas en tiempo real. Un usuario debía navegar decenas de páginas manualmente.
+
+### Arquitectura M1
+
+```mermaid
+flowchart LR
+    subgraph Sources["Fuentes oficiales"]
+        S1["tqconfiable.com - 56 URLs"]
+        S2["tqfarma.com - 9 URLs"]
+    end
+
+    subgraph Build["Pipeline offline"]
+        SC["scraper.py - Selenium + requests"]
+        KB["knowledge_base.py - clean + chunks(1500/300)"]
+    end
+
+    subgraph Artifacts["Artefactos"]
+        KT[("knowledge_base.txt - 216K chars")]
+        CJ[("chunks.json - 331 chunks")]
+    end
+
+    subgraph Runtime["Runtime online"]
+        QS["qa_system.py - LangChain LCEL - 3 cadenas"]
+        GM(["Gemini 2.5 Flash - temperature=0.1"])
+        APP["app.py - Streamlit - 4 pestañas"]
+    end
+
+    S1 --> SC --> KB --> KT --> QS <--> GM
+    S2 --> SC
+    KB --> CJ
+    APP --> QS
+    User((Usuario)) --> APP --> User
+```
+
+### Stack M1
+
+| Componente | Tecnología |
+|---|---|
+| LLM | Google Gemini 2.5 Flash (`temperature=0.1`) |
+| Orquestación | LangChain LCEL - patrón `prompt \| llm \| StrOutputParser()` |
+| Scraping JS | Selenium 4 + Chrome headless + `webdriver-manager` |
+| Scraping HTTP | `requests` + BeautifulSoup 4 |
+| Interfaz | Streamlit con 4 pestañas |
+| Lenguaje | Python 3.14 |
+
+### Knowledge Base
+
+Se implementaron dos motores de scraping según la naturaleza de cada fuente:
+- **Motor Selenium** para `tqconfiable.com` (56 URLs): renderizado JS con `navigator.webdriver` override y User-Agent real de Chrome 120.
+- **Motor requests** para `tqfarma.com` (9 URLs): portal médico accesible vía HTTP estándar.
+
+| Métrica | V1 Preliminar | V2 Final |
+|---|---|---|
+| URLs procesadas | 12 | 65 |
+| Caracteres totales | 48,630 | 216,611 |
+| Chunks semánticos | 72 | 331 |
+| Tamaño de chunk | 800 chars | 1,500 chars |
+| Overlap | 150 chars | 300 chars |
+| Truncamiento contexto | 15,000 chars | Completo |
+
+### Sistema de Prompts con Protocolo SENSIBLE
+
+Se diseñaron tres prompts con Chain-of-Thought y quality gate interno:
+
+- **`SUMMARY_PROMPT`** - resumen ejecutivo estilo C-suite (350–450 palabras) con 6 fases internas de razonamiento.
+- **`FAQ_PROMPT`** - 20 preguntas con distribución obligatoria por audiencia (cliente, inversionista, talento).
+- **`QA_PROMPT`** - Q&A con protocolo de triage en 4 niveles:
+
+| Protocolo | Cuándo | Acción |
+|---|---|---|
+| TOTAL | Respuesta completa en contexto | Responde con todos los datos |
+| PARCIAL | Datos relacionados pero incompletos | Responde con lo disponible |
+| NULA | Tema fuera del corpus | Informa que no tiene esa información |
+| **SENSIBLE** | **Salud, retiros, litigios, INVIMA** | **Redirige a canales oficiales sin confirmar ni negar** |
+
+> El protocolo SENSIBLE es crítico para una farmacéutica: alucinar un dato de salud o confirmar un retiro de producto es un riesgo legal inaceptable. Este protocolo se portó a los Módulos 2 y 3.
+
+### Resultados M1
+
+- **80%** de precisión factual en 20 preguntas de evaluación
+- **0** alucinaciones detectadas
+- 3 respuestas parciales (15%), 1 fallback (5%)
+
+### Quickstart M1
+
+```bash
+cd tq_chatbot
+python scraper.py          # ~5-10 min, requiere Chrome
+python knowledge_base.py
+python -m streamlit run app.py
+# Abre: http://localhost:8501
+```
+
+Demo en Streamlit Cloud: https://tq-chatbot-taaml.streamlit.app
+
+---
+
+## Módulo 2 - Agente RAG con LangGraph
+
+**Objetivo:** reemplazar el contexto estático por RAG real, agregar memoria persistente y routing inteligente.
+
+### Mejoras respecto al M1
+
+1. **RAG real** con Chroma: solo los chunks semánticamente relevantes llegan al LLM (de 216K a ~6K chars por consulta).
+2. **Router LLM** con 3 rutas: `direct` (historial), `structured` (datos exactos), `rag` (semántico).
+3. **Memoria persistente** entre sesiones con `AsyncSqliteSaver` - el modelo recuerda el nombre del usuario al reabrir un hilo.
+4. **Parámetros configurables** en el frontend: sliders de `temperature` (0.0–1.0) y `top_k` (1–10).
+5. **LangSmith** para trazabilidad completa de cada invocación del grafo.
+6. **Sin Docker**: SQLite + Chroma corren como archivos locales del host.
+
+### Arquitectura M2 - StateGraph de LangGraph
+
+```mermaid
+flowchart TD
+    U([Usuario - Next.js 15 + assistant-ui]) --> CL
+
+    subgraph StateGraph
+        CL[classify_node - ChatOllama.with_structured_output - RouteDecision]
+        CL -->|direct| DR[direct_node - historial del checkpoint]
+        CL -->|structured| ST[structured_node - datos_estructurados.json]
+        CL -->|rag| RT[retrieve_node - Chroma.similarity_search_with_score]
+    end
+
+    subgraph Runtime
+        GN[generate_node - ChatOllama.astream - temperature configurable]
+        CP[(AsyncSqliteSaver - tq.db - memoria nativa)]
+        LS[LangSmith - trazabilidad]
+    end
+
+    DR --> GN
+    ST --> GN
+    RT --> GN
+    GN --> CP
+    GN --> LS
+    CP -.->|checkpoint| CL
+```
+
+### RAG con Chroma y Qwen3-Embedding
+
+**Chroma** persiste embeddings en `./chroma_db/` sin servidor externo. La búsqueda opera sobre distancia L2 transformada a similitud: $score = \frac{1}{1 + d_{L2}}$, con umbral `min_score=0.40`.
+
+**Qwen3-Embedding-0.6B** (1024 dimensiones) - elegido por:
+- Top de MTEB 2025 en español entre modelos open-source pequeños
+- 600 MB de memoria vs 2.3 GB de BGE-M3
+- Misma familia de tokenización que Qwen3-8B para consistencia semántica
+
+### Router con Salida Estructurada
+
+```python
+class RouteDecision(BaseModel):
+    route: Literal["direct", "structured", "rag"]
+
+# En classify_node:
+structured_llm = router_llm.with_structured_output(RouteDecision)
+decision = await structured_llm.ainvoke(messages)
+```
+
+El clasificador LLM supera al router de palabras clave en cobertura de sinónimos y negaciones. Regla de desempate: si hay duda entre `rag` y `direct`, se prefiere `direct` (barato; el usuario puede reformular).
+
+### Memoria Persistente entre Sesiones
+
+`AsyncSqliteSaver` serializa el `ChatState` completo en SQLite tras cada turno. Al reabrir un hilo con el mismo `thread_id`, LangGraph restaura automáticamente el estado - el modelo recuerda el nombre del usuario entre sesiones.
+
+```python
+checkpoint_conn = await aiosqlite.connect(settings.sqlite_path)
+checkpointer = AsyncSqliteSaver(checkpoint_conn)
+await checkpointer.setup()
+graph = builder.compile(checkpointer=checkpointer)
+```
+
+### Diagrama de Secuencia M2
+
+```mermaid
+sequenceDiagram
+    actor U as Usuario
+    participant FE as Frontend (Next.js 15)
+    participant API as FastAPI POST /api/chat
+    participant G as LangGraph StateGraph
+    participant CP as AsyncSqliteSaver (tq.db)
+    participant OL as Ollama Qwen3-8B
+
+    U->>FE: Escribe pregunta
+    FE->>API: POST {question, thread_id, temperature, top_k}
+    API->>G: graph.astream(inputs, thread_id)
+    G->>CP: load_state(thread_id)
+    CP-->>G: historial previo
+    G->>G: classify → route
+    G->>OL: ChatOllama.astream(system + history + context)
+    loop por cada token
+        OL-->>FE: SSE event: token
+        FE-->>U: render incremental
+    end
+    G->>CP: save_state(messages += [Human, AI])
+```
+
+### LangSmith - Observabilidad
+
+```bash
+# En .env:
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_xxxxxxxxxxxx
+LANGSMITH_PROJECT=tq-chatbot
+
+# Cada consulta genera un trace completo:
+# chat → classify (ChatOllama) → retrieve (Chroma) → generate (ChatOllama)
+```
+
+### Stack M2
 
 | Capa | Tecnología |
 |---|---|
-| Runtime | Python 3.12, `uv` |
 | API | FastAPI + Pydantic v2 |
-| Orquestación | LangGraph `StateGraph` con 5 nodos (`apps/api/graph/`) |
-| Router | `classify_node` con `ChatOllama.with_structured_output(RouteDecision)` (3 rutas) |
-| LLM | Qwen3-8B-Instruct vía Ollama (`langchain-ollama` para el grafo, `apps/api/llm/ollama_client.py` para títulos) |
-| Embeddings | Qwen3-Embedding-0.6B vía `langchain-community.OllamaEmbeddings` |
+| Orquestación | LangGraph `StateGraph` con 5 nodos |
+| Router | `ChatOllama.with_structured_output(RouteDecision)` |
+| LLM | Qwen3-8B vía Ollama |
+| Embeddings | Qwen3-Embedding-0.6B vía `OllamaEmbeddings` |
 | Vector DB | Chroma persistente en `./chroma_db/` |
-| Persistencia | SQLite en `./tq.db` — `conversations`+`messages` (UI) y `checkpoints`+`writes` (memoria del grafo) en el mismo archivo |
-| Memoria por hilo | `AsyncSqliteSaver` — checkpoints keyed por `thread_id` |
-| Monitoreo | LangSmith (opcional, vía env vars `LANGSMITH_*`) |
-| Frontend | Next.js 15 (App Router) + React 19 + [assistant-ui](https://www.assistant-ui.com/) + Tailwind 3 |
-| Streaming | SSE (Server-Sent Events) — parser custom dentro del `ChatModelAdapter` |
-| Herramienta estructurada | `apps/api/datos_estructurados.json` + `apps/api/tools/structured_tool.py` |
-| Panel de parámetros | Sliders de `temperature` y `top_k` por turno (`SettingsPanel.tsx`) |
-| Scraping | [webclaw](https://github.com/0xMassi/webclaw) (Rust CLI) — `brew install` |
-| Chunking | LangChain `RecursiveCharacterTextSplitter` |
-| Infra | Procesos del host (sin Docker) |
+| Memoria | `AsyncSqliteSaver` en `./tq.db` |
+| Frontend | Next.js 15 + assistant-ui + Tailwind 3 |
+| Streaming | SSE (Server-Sent Events) |
+| Observabilidad | LangSmith (opcional vía env vars) |
 
-Detalles y razones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+### Quickstart M2
 
-## Cómo funciona el sistema
-
-Diagrama de secuencia de un turno de conversación. El endpoint `/api/chat` es un traductor delgado entre LangGraph y SSE; toda la lógica vive en el grafo. La memoria la lleva `AsyncSqliteSaver` automáticamente, no hay carga manual de historial.
-
-```mermaid
-sequenceDiagram
-    actor U as Usuario
-    participant FE as Frontend<br/>(assistant-ui + tqChatAdapter)
-    participant API as FastAPI<br/>POST /api/chat
-    participant G as LangGraph<br/>StateGraph
-    participant CP as AsyncSqliteSaver<br/>./tq.db (checkpoints)
-    participant CL as classify_node<br/>ChatOllama.with_structured_output
-    participant DR as direct_node
-    participant ST as structured_node<br/>datos_estructurados.json
-    participant RT as retrieve_node<br/>Chroma.similarity_search
-    participant CH as Chroma<br/>./chroma_db/
-    participant OL as Ollama<br/>Qwen3-8B
-    participant TH as Threads API<br/>/api/threads/*
-    participant DB as SQLite<br/>conversations+messages
-
-    U->>FE: Escribe pregunta
-    FE->>API: POST /api/chat {question, thread_id, temperature, top_k}
-    API->>G: graph.astream(inputs, configurable={thread_id})
-    G->>CP: load_state(thread_id)
-    CP-->>G: prior messages (últimos N turnos)
-    G->>CL: classify(question + recent_messages)
-    CL-->>G: RouteDecision{route}
-
-    alt route == direct (saludo, follow-up, info personal)
-        G->>DR: pass through (sin retrieval)
-        DR-->>G: contexto = question, sources = []
-        Note over API,FE: NO se emite evento SSE sources
-    else route == structured (teléfono, NIT, horario...)
-        G->>ST: get_structured_data(question)
-        ST-->>G: contexto + source sintético
-        G-->>API: stream update {sources}
-        API-->>FE: SSE event: sources (datos_estructurados.json)
-    else route == rag (preguntas abiertas sobre el corpus)
-        G->>RT: vector_store.similarity_search_with_score
-        RT->>OL: embed(question)
-        RT->>CH: top-k cosine (L2 → 1/(1+L2))
-        CH-->>RT: chunks + distancia
-        RT-->>G: contexto + Source[] filtrados por min_score
-        G-->>API: stream update {sources}
-        API-->>FE: SSE event: sources (URLs reales)
-    end
-
-    G->>OL: ChatOllama.astream(system + history + context)
-    loop por cada token
-        OL-->>G: AIMessageChunk
-        G-->>API: stream messages
-        API-->>FE: SSE event: token
-        FE-->>U: Render incremental
-    end
-    G->>CP: save_state(thread_id, messages += [Human, AI])
-    API-->>FE: SSE event: done
-
-    Note over FE,DB: Persistencia UI — paralela e independiente del checkpointer
-    FE->>TH: POST /api/threads/{id}/messages (turno del usuario)
-    FE->>TH: POST /api/threads/{id}/messages (asistente + sources)
-    TH->>DB: INSERT messages (sources como TEXT JSON)
+```bash
+make install          # uv sync + pnpm install
+make ingest           # indexa el corpus en Chroma
+make backend          # uvicorn :8000
+make frontend         # next dev :3000
+# Abre: http://localhost:3000
 ```
 
-> **Dos capas de persistencia en `tq.db`** con responsabilidades distintas:
-> - `conversations` + `messages` → vista persistente para la UI (el frontend hidrata la conversación al recargar).
-> - `checkpoints` + `writes` → estado interno del grafo que el siguiente turno carga vía `AsyncSqliteSaver`.
+### Pruebas de Validación M2
 
-## Flujo del frontend
+| Tipo | Pregunta | Ruta | Resultado |
+|---|---|---|---|
+| Conversacional | Hola | `direct` | Saludo sin retrieval |
+| Memoria | ¿Cómo me llamo? (tras presentarse) | `direct` | Responde desde checkpoint |
+| Structured | ¿Cuál es el teléfono? | `structured` | 01 8000 912 808 |
+| RAG | ¿Cuál es la historia de TQ? | `rag` | Respuesta + chips de fuentes |
+| Parámetros | temp=0.9, misma pregunta | `rag` | Respuesta más variada |
 
-El frontend usa [assistant-ui](https://www.assistant-ui.com/) como conjunto de primitivos de chat y le enchufa cuatro piezas propias:
+---
 
-| Pieza | Tipo assistant-ui | Responsabilidad |
+## Módulo 3 - Agent OS con OpenFang
+
+**Objetivo:** productizar el agente desplegándolo en Telegram y WhatsApp con autonomía proactiva y soberanía de datos.
+
+### ¿Por qué OpenFang y no seguir con FastAPI?
+
+| Dimensión | M2 (FastAPI + LangGraph) | M3 (OpenFang Agent OS) |
 |---|---|---|
-| `lib/tqChatAdapter.ts` | `ChatModelAdapter` | Llama a `/api/chat`, parsea el SSE y emite el contenido acumulado del modelo. Lee `temperature`/`top_k` del `settingsStore` y `thread_id` del `threadListAdapter`. |
-| `lib/threadHistoryAdapter.ts` | `ThreadHistoryAdapter` | Persiste (`append`) e hidrata (`load`) los mensajes de un hilo vía `/api/threads/*`. Re-hidrata el `sourcesStore` al abrir. |
-| `lib/threadListAdapter.tsx` | `RemoteThreadListAdapter` | Lista, crea, renombra, archiva y titula hilos en el sidebar. Mantiene `activeRemoteThreadId` que `tqChatAdapter` lee. |
-| `lib/sourcesStore.ts` | Zustand (canal lateral) | Mapa `messageId → Source[]`. Las citas no viajan en el content stream del modelo. |
-| `lib/settingsStore.ts` | Zustand | `temperature` + `topK` del `SettingsPanel`. Se leen por turno en `tqChatAdapter` y se mandan al backend. |
-| `components/SettingsPanel.tsx` | UI sidebar derecho | Dos sliders que controlan el `settingsStore`. |
+| Runtime | Python + uvicorn | Rust ~32 MB, ~40 MB RAM |
+| Seguridad tools | Proceso Python sin sandbox | WASM sandbox (fuel + epoch + mem limits) |
+| Canales | Requiere webhook + SSL | Adaptadores nativos en `config.toml` |
+| Memoria | AsyncSqliteSaver manual | 6 capas nativas del OS |
+| Autonomía | Reactivo | Proactivo (Hands en background) |
+| Sesiones multi-canal | No | Cross-channel nativo |
+| Arranque | 2 procesos + Ollama | 1 proceso + Ollama |
 
-Flujo de información de un turno, versión resumida:
+Agregar WhatsApp en el M2 habría requerido servidor público, webhook de Meta y certificado SSL. En OpenFang fue una línea en `config.toml`.
+
+### Arquitectura M3 - Agent OS
+
+```
+   Telegram ──┐                          ┌─────────────────────────┐
+   WhatsApp ──┤  adaptadores nativos      │  tq-asistente (core)    │
+   (38+ más) ─┘  [channels.*]  ─────────▶│  builtin:chat            │──▶ Ollama qwen3:8b
+                                          │  memory_recall + store   │    :11434
+                                          └─────────────────────────┘
+                                                     │
+                                          ┌─────────────────────────┐
+                                          │  Memoria 6 capas        │
+                                          │  KV · Vector · Grafo    │
+                                          │  Sesiones · Tareas      │
+                                          │  SQLite openfang.db     │
+                                          └─────────────────────────┘
+                                                     │
+                                          ┌─────────────────────────┐
+                                          │  collector-tq Hand      │
+                                          │  web_search · OSINT     │
+                                          │  knowledge_* · schedule │
+                                          └─────────────────────────┘
+```
+
+### Diagrama End-to-End M3
 
 ```mermaid
-sequenceDiagram
-    actor U as Usuario
-    participant FE as Frontend<br/>(assistant-ui + adapters)
-    participant API as Backend
+flowchart TD
+    U([Usuario - Telegram / WhatsApp]) --> BR
 
-    U->>FE: Envía mensaje
-    FE->>API: POST /api/threads/{id}/messages (guarda turno del usuario)
-    FE->>API: POST /api/chat {question, thread_id, temperature, top_k}
-    API-->>FE: SSE sources, tokens, done
-    Note over FE: Pinta la respuesta token a token y guarda las citas en sourcesStore
-    FE->>API: POST /api/threads/{id}/messages (guarda respuesta + citas)
-    FE->>API: POST /api/threads/{id}/title (solo en el primer turno)
-    API-->>FE: Título generado por Ollama
-    Note over FE: Refresca el sidebar con el título
+    subgraph OpenFang Agent OS
+        BR[Adaptadores nativos - Telegram bridge · WhatsApp QR:3009]
+        AG[tq-asistente core - builtin:chat · memory_recall + store]
+        M6[Memoria 6 capas - KV · Vector · Grafo · SQLite openfang.db]
+        HN[collector-tq Hand - web_search · knowledge_* · schedule]
+        OL[Ollama local - qwen3:8b :11434]
+    end
+
+    DATA[Fuente conocimiento - data/raw/*.json · datos_estructurados.json]
+
+    BR --> AG
+    AG --> M6
+    AG --> OL
+    AG -.->|activa| HN
+    HN --> M6
+    DATA -->|migrate.py| M6
+    BR -.->|respuesta| U
 ```
 
-### Generación del título del hilo
+### Memoria de 6 Capas
 
-Un hilo nuevo nace como `"Nueva conversación"` — es lo que devuelven `initialize`/`create_thread`. El título "real" llega después, por un canal separado del chat:
+El script `scripts/migrate_to_openfang.py` inyecta el conocimiento corporativo en dos canales idempotentes:
 
-1. Tras completarse el primer intercambio, assistant-ui llama a `threadListAdapter.generateTitle(remoteId, messages)`.
-2. Ese método hace `POST /api/threads/{id}/title` con los primeros mensajes del hilo.
-3. El backend (`routers/threads.py` → `generate_title`) le pide a **ChatOllama** un título corto (máx. 6 palabras, español), lo limpia de comillas/prefijos y lo **persiste** con un `UPDATE conversations`.
-4. El frontend recibe el título y llama a `reloadThreadList()` para que el sidebar deje de mostrar "Nueva conversación".
+1. **Structured KV Store** vía REST (`PUT /api/memory/agents/{id}/kv/{key}`):
+   - `identidad_corporativa`, `contacto`, `sedes`, `marcas`, `lineas_negocio`, `sostenibilidad`, `empleo`
+   - Datos exactos verificados de `datos_estructurados.json`
 
-### Hidratación al abrir un hilo
-
-Al abrir o recargar un hilo, `MyRuntimeProvider` remonta el `RuntimeScope` con el `threadId` de la URL. El `ThreadHistoryAdapter.load()` pide `GET /api/threads/{id}/messages`, re-hidrata el `sourcesStore` con `bulkSet` y devuelve el repositorio de mensajes que assistant-ui renderiza. El estado interno del grafo (checkpoint) se carga automáticamente cuando el usuario manda el siguiente turno.
-
-## Prerrequisitos
-
-- Python 3.12 + `uv`
-- Node 20+ + `pnpm` (para el frontend)
-- ~10 GB de disco libre para modelos
-- **Ollama** instalado nativo en el host con los modelos descargados:
-  ```bash
-  ollama pull qwen3:8b
-  ollama pull qwen3-embedding:0.6b
-  ```
-- [`webclaw`](https://github.com/0xMassi/webclaw) en el PATH **sólo si vas a re-scrapear**:
-  ```bash
-  brew install 0xMassi/webclaw/webclaw
-  ```
-
-> **Sin Docker.** Todo el stack corre como procesos del host: SQLite vive en
-> un archivo (`./tq.db`), Chroma en un directorio (`./chroma_db/`), Ollama
-> en `http://localhost:11434`. Si tenés contenedores viejos del docker-compose
-> previo, párelos con `docker stop <nombre>` antes de arrancar — pueden chocar
-> en el puerto 8000.
-
-## Quickstart
+2. **Vector Store** vía inserción directa en SQLite de OpenFang:
+   - 1,442 documentos del corpus `data/raw/*.json`
+   - Embeddings Qwen3-Embedding-0.6B serializados como BLOB f32 little-endian
+   - Deduplicación por SHA-256, IDs deterministas `uuid5(url#i)`
 
 ```bash
-# 1. Instalar dependencias (backend + frontend)
-make install
-#   equivale a:  uv sync && (cd frontend && pnpm install)
-
-# 2. (Una vez) Scrapear los sitios — necesita `webclaw` en el PATH.
-uv run python scripts/fetch_sitemaps.py --site all
-
-# 3. Indexar el corpus en Chroma (idempotente; re-ejecutable).
-make ingest
-#   equivale a:  uv run python scripts/ingest_to_rag.py
-
-# 4. Levantar backend y frontend (dos terminales).
-make backend     # uvicorn :8000, crea ./tq.db al primer arranque
-make frontend    # next dev :3000
-
-# 5. Abrir el chat
-open http://localhost:3000
+make of-migrate
+# KV store: 7 claves sembradas
+# Vector store: 1.442 documentos indexados
 ```
 
-> El API queda en `http://localhost:8000` (FastAPI, sólo `/api/*`). El frontend
-> consume `NEXT_PUBLIC_API_BASE`. CORS ya permite ambos orígenes en dev.
+### Agente tq-asistente
 
-## Comandos útiles
+Definido en `agents/tq-asistente/agent.toml`:
+
+- **Modelo:** `qwen3:8b` local, `temperature=0.2`, `max_tokens=4096`. Sin fallback cloud.
+- **Tools:** `memory_recall` (búsqueda semántica + re-ranking coseno) y `memory_store`.
+- **Protocolo SENSIBLE portado del M1:** temas de salud, retiros, litigios e INVIMA se redirigen a canales oficiales sin confirmar hechos.
+- **Datos hardcoded en system prompt:** marcas, NIT, contacto, horario - alta frecuencia, sin tool call.
+
+### Hand Autónomo: collector-tq (Perfil Analítico - Opción B)
+
+Inteligencia competitiva farmacéutica autónoma. Definido en `hands/collector-tq/HAND.toml`.
+
+**Tools OSINT:** `web_search`, `web_fetch`, `knowledge_add_entity`, `knowledge_add_relation`, `knowledge_query`, `schedule_create`, `memory_store`, `memory_recall`, `event_publish`.
+
+**Playbook de 7 fases:**
+
+```
+Fase 1 → Recuperar estado previo (memory_recall de collector_tq_state)
+Fase 2 → Inicializar objetivo y agenda de consultas
+Fase 3 → Construir queries por focus_area (competitor/market/technology/business)
+Fase 4 → Barrido OSINT (web_search + web_fetch, hasta max_sources_per_cycle fuentes)
+Fase 5 → Construir grafo de conocimiento (entidades: Empresa/Producto/Evento/Cifra)
+Fase 6 → Detectar cambios delta (crítico/importante/menor) + sentimiento de marca
+Fase 7 → Persistir reporte Markdown/JSON + actualizar métricas del dashboard
+```
+
+**Guardrails farmacéuticos:** retiros, alertas INVIMA, litigios y farmacovigilancia se reportan como "señales a verificar" - nunca como hechos confirmados.
 
 ```bash
-# Re-fetch forzado (ignora content_hash existente)
-uv run python scripts/fetch_sitemaps.py --site all --force
-
-# Sólo un sitio
-uv run python scripts/fetch_sitemaps.py --site tqfarma
-
-# Ingesta dry-run (cuenta cambios sin escribir)
-uv run python scripts/ingest_to_rag.py --dry-run
-
-# Reset total: borra SQLite (memoria + hilos UI) + Chroma (vectores).
-# data/raw se conserva.
-make reset
-
-# Health check (devuelve chunk_count desde Chroma)
-curl http://localhost:8000/api/health
+make of-hand
+# Equivale a: openfang hand activate collector-tq
+# Dashboard → http://127.0.0.1:4200 → Hands → collector-tq
 ```
 
-## Estructura
+### Canales de Mensajería
+
+**Telegram** (long-polling, sin URL pública):
+```toml
+# config.toml
+[channels.telegram]
+bot_token_env = "TELEGRAM_BOT_TOKEN"
+default_agent = "tq-asistente"
+allowed_users = []  # vacío = todos
+```
+```bash
+# En .env: TELEGRAM_BOT_TOKEN=tu_token_de_BotFather
+# Activo automáticamente con make of-start
+```
+
+**WhatsApp** (modo web, gateway QR, puerto 3009):
+```bash
+make of-whatsapp
+# Arranca gateway Node en :3009
+# Dashboard → Channels → WhatsApp → escanear QR (igual que WhatsApp Web)
+```
+
+Las sesiones son **cross-channel**: el mismo usuario puede continuar una conversación en Telegram y retomar contexto en WhatsApp.
+
+### Stack M3
+
+| Capa | Tecnología |
+|---|---|
+| Agent OS | OpenFang (Rust, binario ~32 MB) |
+| LLM | Qwen3-8B vía Ollama (zero-config autodiscovery :11434) |
+| Embeddings | Qwen3-Embedding-0.6B |
+| Memoria | SQLite 6 capas (KV + Vector + Grafo + Sesiones + Tareas + Canónica) |
+| Canales | Telegram (nativo) + WhatsApp (gateway QR :3009) |
+| Seguridad | WASM sandbox con fuel + epoch + mem limits |
+| Autonomía | Hand `collector-tq` (OSINT farmacéutico 24/7) |
+| Configuración | `config.toml` + `agent.toml` + `HAND.toml` |
+
+---
+
+## Quickstart M3 (estado actual)
+
+### Prerrequisitos
+
+```bash
+# Instalar OpenFang
+curl -fsSL https://openfang.sh/install | sh
+openfang --version && openfang doctor
+
+# Modelos Ollama (si no los tienes)
+ollama pull qwen3:8b
+ollama pull qwen3-embedding:0.6b
+
+# Token de Telegram (@BotFather en Telegram → /newbot)
+cp openfang/.env.example openfang/.env
+# Editar .env: agregar TELEGRAM_BOT_TOKEN
+```
+
+### Arranque completo
+
+```bash
+# 1. Inicializar y configurar
+openfang init
+make of-config        # copia config + agente + hand a ~/.openfang
+
+# 2. Levantar el daemon
+make of-start         # dashboard en http://127.0.0.1:4200
+
+# 3. Inyectar conocimiento corporativo
+make of-migrate       # KV store + vector store
+
+# 4. Activar el hand autónomo
+make of-hand          # openfang hand activate collector-tq
+
+# 5. WhatsApp (opcional)
+make of-whatsapp      # gateway QR en :3009
+
+# 6. Verificar
+make of-doctor        # todo verde = OK
+make of-status        # estado daemon + hands activos
+
+# Telegram ya está activo automáticamente con of-start
+```
+
+### Comandos útiles M3
+
+```bash
+make of-config        # sincroniza config a ~/.openfang
+make of-start         # arranca el daemon
+make of-stop          # detiene el daemon
+make of-status        # estado del daemon y hands
+make of-migrate       # re-inyecta conocimiento (idempotente)
+make of-hand          # activa collector-tq
+make of-whatsapp      # gateway WhatsApp QR
+make of-doctor        # diagnóstico completo
+```
+
+---
+
+## Análisis t-SNE / UMAP de Intenciones (Bonus)
+
+Se extrajo el historial de conversaciones del SQLite (`tq.db`, tabla `messages`) y se proyectaron los embeddings a 2D con t-SNE y UMAP (`notebooks/intent_tsne.ipynb`).
+
+### Clústeres Identificados
+
+| Clúster | Tipo de consulta | Ruta del agente |
+|---|---|---|
+| 1 | Contacto y ubicación (teléfono, horario, NIT, sede) | `structured` |
+| 2 | Identidad corporativa (historia, marcas, fundación) | `rag` |
+| 3 | Productos y biblioteca tqfarma (moléculas, vademécum) | `rag` |
+| 4 | Conversación social y follow-ups (saludos, ¿cómo me llamo?) | `direct` |
+
+La separación nítida entre los clústeres 1 y 4 valida la decisión de implementar las rutas `structured` y `direct` como caminos independientes. El solapamiento parcial entre clústeres 2 y 3 explica los casos de enrutamiento ambiguo RAG ↔ estructurado.
+
+```bash
+# Generar los gráficos:
+make tsne
+# Salida: notebooks/intent_tsne.png y notebooks/intent_umap.png
+```
+
+---
+
+## Estructura del Repositorio
 
 ```
 .
-+-- apps/api/                  FastAPI app (sin Docker, corre con `make backend`)
-|   +-- core/
-|   |   +-- config.py          Settings (sqlite_path, chroma_path, langsmith_*, ...)
-|   |   +-- db.py              Database (aiosqlite) + schema in-line + WAL
-|   +-- graph/                 LangGraph StateGraph
-|   |   +-- state.py           ChatState (TypedDict) + RouteDecision (Pydantic)
-|   |   +-- llm.py             ChatOllama factories (chat + router)
-|   |   +-- nodes.py           classify / direct / structured / retrieve / generate
-|   |   +-- build.py           Ensambla el StateGraph con el checkpointer
-|   +-- llm/
-|   |   +-- ollama_client.py   Cliente raw para tareas one-shot (titles)
-|   +-- rag/
-|   |   +-- retriever.py       Wrap thin sobre Chroma.similarity_search_with_score
-|   |   +-- prompt.py          SYSTEM_PROMPT (protocolo TOTAL/PARCIAL/NULA/SENSIBLE)
-|   |   +-- corpus_stats.py    Conteo agregado desde metadata de Chroma
-|   +-- routers/
-|   |   +-- chat_v2.py         POST /api/chat — traductor entre grafo y SSE
-|   |   +-- threads.py         GET/POST/PATCH/DELETE /api/threads/*
-|   |   +-- health.py          GET /api/health
-|   +-- tools/
-|   |   +-- structured_tool.py get_structured_data + STRUCTURED_KEYWORDS
-|   +-- datos_estructurados.json   Datos exactos de TQ (teléfono, NIT, sedes...)
-|   +-- schemas.py             ChatRequest, Source, ThreadOut, MessageOut, ...
-|   +-- main.py                FastAPI app + lifespan (DB + Chroma + checkpointer + grafo)
-+-- chroma_db/                 Persist directory de Chroma (gitignored)
-+-- tq.db                      SQLite local: conversations + messages + checkpoints* (gitignored)
-+-- frontend/                  Next.js + assistant-ui
-|   +-- app/                   Layout + page (sidebar + chat)
-|   +-- components/            ChatShell, Thread, Composer, SettingsPanel, SourcesFooter, ...
-|   +-- lib/                   tqChatAdapter, threadListAdapter, threadHistoryAdapter,
-|                              sourcesStore, settingsStore, sse, api, messages
-+-- scripts/                   fetch_sitemaps.py, ingest_to_rag.py, reset_rag.py
-+-- data/                      raw + processed (gitignored)
-+-- docs/ARCHITECTURE.md       Decisiones (ADRs, incluyendo las históricas superadas)
-+-- Makefile                   install / backend / frontend / ingest / reset / clean
-+-- pyproject.toml
-+-- uv.lock
+├── apps/api/                  FastAPI app - Módulo 2 (fuente del conocimiento M3)
+│   ├── core/                  config.py + db.py (SQLite + WAL)
+│   ├── graph/                 LangGraph StateGraph (state, llm, nodes, build)
+│   ├── rag/                   retriever.py + prompt.py (SENSIBLE protocol)
+│   ├── routers/               chat_v2.py + threads.py + health.py
+│   ├── tools/                 structured_tool.py
+│   └── datos_estructurados.json
+├── openfang/                  Módulo 3 - Agent OS
+│   ├── config.toml            proveedor Ollama, canales, bindings
+│   ├── .env.example           tokens (TELEGRAM_BOT_TOKEN, LANGSMITH_*)
+│   ├── agents/tq-asistente/
+│   │   └── agent.toml         persona TQ + protocolo SENSIBLE + tools
+│   └── hands/collector-tq/
+│       ├── HAND.toml          manifiesto: tools, playbook 7 fases, guardrails
+│       └── SKILL.md           identidad base permanente del hand
+├── frontend/                  Next.js 15 + assistant-ui (Módulo 2)
+├── scripts/
+│   ├── fetch_sitemaps.py      scraping webclaw
+│   ├── ingest_to_rag.py       indexación Chroma (idempotente)
+│   └── migrate_to_openfang.py inyección KV + vector store OpenFang
+├── notebooks/
+│   ├── intent_tsne.ipynb      análisis t-SNE / UMAP
+│   ├── intent_tsne.png        gráfico t-SNE
+│   └── intent_umap.png        gráfico UMAP
+├── data/raw/                  corpus scrapeado (gitignored)
+├── docs/ARCHITECTURE.md       decisiones técnicas (ADRs) M1→M2→M3
+├── tq_chatbot/                código Módulo 1 (Streamlit + Gemini)
+│   ├── scraper.py
+│   ├── knowledge_base.py
+│   ├── qa_system.py
+│   └── app.py
+├── Makefile                   todos los comandos del proyecto
+├── pyproject.toml
+└── uv.lock
 ```
 
-## Variables de entorno
+---
 
-| Variable | Default | Notas |
-|---|---|---|
-| `LLM_MODEL` | `qwen3:8b` | Cambiar a `qwen3:4b` si hay < 12 GB de RAM. |
-| `LLM_ROUTER_MODEL` | _vacío_ | Modelo opcional para `classify_node`. Si vacío, cae a `LLM_MODEL`. Útil para bajar a `qwen3:1.7b` y acelerar el routing. |
-| `EMBED_MODEL` | `qwen3-embedding:0.6b` | Ollama debe tener el tag descargado (`ollama pull qwen3-embedding:0.6b`). |
-| `TOP_K` | `6` | Default de chunks por consulta. El frontend lo overridea per-request desde el slider del `SettingsPanel`. |
-| `MIN_SCORE` | `0.40` | Umbral de relevancia tras transformar L2 → `1/(1+L2)`. **No es similitud coseno** — recalibrar tras reingestar o cambiar embedding. |
-| `CHROMA_PATH` | `./chroma_db` | Persist directory de Chroma. Vive en el host. |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama nativo. Si lo dockerizás, ajustá esta URL. |
-| `SQLITE_PATH` | `./tq.db` | Único archivo de persistencia: `conversations`+`messages` (UI) Y `checkpoints*` (memoria del grafo). Borrarlo (junto con `tq.db-shm` y `tq.db-wal`) resetea todo el estado del backend. |
-| `LANGSMITH_TRACING` | `false` | `true` activa el envío de traces. Requiere también `LANGSMITH_API_KEY`. |
-| `LANGSMITH_API_KEY` | _vacío_ | API key de smith.langchain.com. Sin esto, el tracing se queda apagado aunque `LANGSMITH_TRACING=true`. |
-| `LANGSMITH_PROJECT` | `tq-chatbot` | Nombre del proyecto en la UI de LangSmith. |
-| `LANGSMITH_ENDPOINT` | `https://api.smith.langchain.com` | Sobrescribir sólo para self-hosted. |
-
-## LangGraph
-
-La orquestación del agente vive en `apps/api/graph/`:
-
-| Archivo | Rol |
-|---|---|
-| `state.py` | `ChatState` (TypedDict con reductor `add_messages`) y `RouteDecision` (Pydantic, salida estructurada del clasificador). |
-| `llm.py` | Fábricas de `ChatOllama` para el LLM principal (streaming, `reasoning=False`) y el clasificador del router (`temperature=0`, contexto reducido). |
-| `nodes.py` | `classify_node`, `direct_node`, `structured_node`, `retrieve_node`, `generate_node` + `route_branch` para el conditional edge. |
-| `build.py` | Ensambla el `StateGraph`, agrega edges y compila con el checkpointer. |
-
-```mermaid
-flowchart TD
-    START([START]) --> CL[classify_node<br/>ChatOllama.with_structured_output<br/>recibe pregunta + últimos 6 mensajes]
-    CL -->|route=direct| DR[direct_node<br/>sin retrieval, sin herramienta]
-    CL -->|route=structured| ST[structured_node<br/>datos_estructurados.json]
-    CL -->|route=rag| RT[retrieve_node<br/>Chroma.similarity_search_with_score]
-    DR --> GN[generate_node<br/>ChatOllama.astream]
-    ST --> GN
-    RT --> GN
-    GN --> END([END])
-```
-
-**El router toma 3 decisiones, no 2.** El primer diseño sólo tenía `structured` vs `rag` — cada turno disparaba Chroma o el JSON, incluso para follow-ups que se respondían con el historial. Ahora `classify_node` recibe los últimos 6 mensajes del hilo (vía el checkpointer) además de la pregunta nueva, y elige:
-
-- **`direct`** — la respuesta sale del historial (follow-up tipo "¿y por qué?", "explícame eso") o es una interacción social (saludo, agradecimiento, información personal). Sin retrieval, sin herramienta, sin chips de fuente. El frontend no recibe evento `sources`.
-- **`structured`** — pregunta de dato exacto: teléfono, NIT, horario, sede, marcas, etc. Dispara `get_structured_data()` y emite un chip sintético `datos_estructurados.json`.
-- **`rag`** — pregunta abierta sobre el corpus. Dispara `Chroma.similarity_search_with_score`, transforma L2 → `1/(1+L2)`, filtra por `min_score`, emite los chips reales con URL + score.
-
-**Memoria por hilo via checkpointer.** `AsyncSqliteSaver` corre `setup()` la primera vez y crea las tablas `checkpoints`, `writes` (+ una de migración) en el mismo `tq.db` que `conversations`/`messages`. Cada turno se invoca el grafo con `configurable={"thread_id": <uuid>}`; LangGraph carga el estado previo, ejecuta los nodos y guarda el nuevo state. El reductor `add_messages` del campo `messages` se encarga del append idempotente — no hay carga manual de historial en `chat_v2.py`.
-
-**Visibilidad en runtime.** `classify_node` loguea cada decisión en la terminal del backend:
-```
-INFO tq.graph: router → direct | history=0 msgs | q='me llamo jacob'
-INFO tq.graph: router → direct | history=2 msgs | q='cómo me llamo?'
-INFO tq.graph: router → rag    | history=4 msgs | q='qué hace tecnoquímicas...'
-INFO tq.graph: router → structured | history=6 msgs | q='cuál es el teléfono...'
-```
-
-## LangSmith
-
-Tracing 100% configurado por variables de entorno. El lifespan de `apps/api/main.py` exporta `LANGSMITH_*` a `os.environ` antes de importar `langgraph` (el cliente de tracing los lee a import time). Cuando ambas variables clave están seteadas, **cada nodo del grafo + cada llamada a un primitivo LangChain (ChatOllama, Chroma) se traza automáticamente** sin código extra.
+## Variables de Entorno
 
 ```bash
-# 1. Obtener API key gratis en https://smith.langchain.com.
-# 2. Setear en .env o en el shell donde corre el backend:
-export LANGSMITH_TRACING=true
-export LANGSMITH_API_KEY=lsv2_pt_xxxxxxxxxxxx
-export LANGSMITH_PROJECT=tq-chatbot
-
-# 3. Reiniciar el backend para que el lifespan recoja las variables.
-#    (Ctrl-C en la terminal de `make backend`, después:)
-make backend
-
-# 4. Hacer una pregunta desde el frontend.
-#    En LangSmith → proyecto `tq-chatbot` → verás el trace:
-#      chat
-#        classify (ChatOllama → qwen3:8b)
-#        retrieve (OllamaEmbeddings.embed_query + Chroma.similarity_search)  [o direct, o structured]
-#        generate (ChatOllama.astream)
+# Copiar y completar:
+cp .env.example .env
+cp openfang/.env.example openfang/.env
 ```
 
-Cuando `LANGSMITH_TRACING=false` o falta la API key, el grafo corre sin enviar nada al servicio externo — útil en CI o desarrollo offline.
-
-## Herramienta de Datos Estructurados
-
-`apps/api/datos_estructurados.json` contiene datos exactos y verificados de Tecnoquímicas: teléfono, horario, NIT, sedes, marcas y líneas de negocio.
-
-`get_structured_data(question)` en `apps/api/tools/structured_tool.py` recupera el dato preciso según la intención de la pregunta. A diferencia del RAG, esta herramienta es determinista y no usa embeddings ni vector store.
-
-| Pregunta | Ruta del agente | Respuesta |
+| Variable | Default | Descripción |
 |---|---|---|
-| Hola | `direct` | Saludo conversacional (sin chips) |
-| Me llamo Jacob | `direct` | Acuse de recibo (sin chips, sin búsqueda) |
-| ¿Cómo me llamo? | `direct` | Respuesta usando memoria del hilo (sin chips) |
-| ¿Cuál es el teléfono? | `structured` | 01 8000 912 808 — chip `datos_estructurados.json` |
-| ¿Cuál es el horario? | `structured` | Lun-Vie 7am-7pm, Sab 8am-1pm |
-| ¿Cuál es el NIT? | `structured` | 890.300.279-7 |
-| ¿Dónde están las sedes? | `structured` | Cra 28 #1-50, Acopi-Yumbo |
-| ¿Cuál es la historia de TQ? | `rag` (Chroma) | Respuesta + chips con URLs reales |
-| ¿Qué programas de sostenibilidad tiene? | `rag` (Chroma) | Respuesta + chips con URLs reales |
+| `LLM_MODEL` | `qwen3:8b` | Modelo LLM principal |
+| `LLM_ROUTER_MODEL` | (vacío → LLM_MODEL) | Modelo del router. Usar `qwen3:1.7b` para acelerar. |
+| `EMBED_MODEL` | `qwen3-embedding:0.6b` | Modelo de embeddings |
+| `TOP_K` | `6` | Chunks por consulta (override por slider en UI) |
+| `MIN_SCORE` | `0.40` | Umbral L2→similitud para RAG |
+| `SQLITE_PATH` | `./tq.db` | BD unificada: conversaciones + checkpoints |
+| `CHROMA_PATH` | `./chroma_db` | Persist directory de Chroma |
+| `OLLAMA_HOST` | `http://localhost:11434` | Servidor Ollama |
+| `LANGSMITH_TRACING` | `false` | Activar trazabilidad LangSmith |
+| `LANGSMITH_API_KEY` | (vacío) | API key de smith.langchain.com |
+| `LANGSMITH_PROJECT` | `tq-chatbot` | Proyecto en LangSmith |
+| `TELEGRAM_BOT_TOKEN` | (vacío) | Token del bot (@BotFather) - en `openfang/.env` |
 
-## Router del Agente
+---
 
-`apps/api/graph/nodes.py::classify_node` clasifica la pregunta usando `ChatOllama.with_structured_output(RouteDecision)`. La conditional edge en `apps/api/graph/build.py` dispara el siguiente nodo:
+## Limitaciones Conocidas
 
-```mermaid
-flowchart TD
-    Q([Pregunta del usuario + últimos 6 mensajes]) --> R{classify_node<br/>ChatOllama.with_structured_output<br/>RouteDecision}
+- **SQLite no escala** a múltiples escritores simultáneos. Para producción multiusuario: PostgreSQL.
+- **WhatsApp modo web** vincula el número personal del desarrollador. Para producción real: Meta Cloud API con número dedicado.
+- **OpenFang pre-1.0**: el API puede tener cambios entre versiones minor. Anotar `openfang --version` en el entorno de prueba.
+- **Corpus estático**: el knowledge base refleja el estado del scraping. Re-ejecutar `make of-migrate` periódicamente para mantenerlo vigente.
+- **Latencia del router**: `classify_node` añade una llamada LLM extra. Reducir con `LLM_ROUTER_MODEL=qwen3:1.7b`.
 
-    R -->|direct| DR[direct_node<br/>sin retrieval]
-    R -->|structured| ST[structured_node<br/>datos_estructurados.json]
-    R -->|rag| RAG[retrieve_node<br/>Chroma.similarity_search]
+---
 
-    DR --> LLM[generate_node<br/>ChatOllama.astream]
-    ST --> LLM
-    RAG --> LLM
+## Licencia
 
-    LLM --> CP[(AsyncSqliteSaver<br/>checkpoints en tq.db)]
-    LLM --> DB[(threads.py<br/>messages en tq.db)]
-```
-
-> El matcheo previo por palabras clave (`needs_structured_tool`) se eliminó. La lista de keywords sigue documentada en `apps/api/tools/structured_tool.py` como referencia de las categorías que el clasificador debe reconocer, pero ahora la decisión la toma el LLM.
-
-## Pruebas de Validación del Agente
-
-| Tipo | Pregunta | Ruta esperada |
-|---|---|---|
-| Conversacional | Hola | `direct` |
-| Información personal | Me llamo Jacob | `direct` |
-| Follow-up con memoria | ¿Cómo me llamo? (tras presentarse) | `direct` |
-| Aclaración | ¿Y por qué? (tras respuesta RAG previa) | `direct` |
-| Dato estructurado | ¿Cuál es el teléfono de atención al cliente? | `structured` |
-| Dato estructurado | ¿Cuál es el horario? | `structured` |
-| Apertura del corpus | ¿Cuál es la historia de Tecnoquímicas? | `rag` |
-| Apertura del corpus | ¿Qué hace TQ por la sostenibilidad? | `rag` |
-| Memoria + RAG | ¿Y cuándo fue eso? (tras respuesta `rag` previa) | `direct` (refiere al turno previo, no busca) |
-
-## Integrantes
-
-- Daniel Felipe Zamora
-- Diego Mauricio Ortiz
-- Jacob González
-- Jairo Andrés Pérez Hurtatis
-
-Maestría en Inteligencia Artificial y Ciencia de Datos
-Universidad Autónoma de Occidente — UAO
-Profesor: Jan Polanco Velasco
-
-## Contribuir
-
-Convención de commits: `tipo(scope): mensaje en español` (`feat`, `fix`, `chore`, `docs`, `refactor`).
-
-Idioma: todo el contenido user-facing (prompts, UI, mensajes de error) está en **español neutro**. Los identificadores de código siguen en inglés.
+Proyecto académico. Los datos extraídos pertenecen a **Tecnoquímicas S.A.** y se usan únicamente con fines educativos.
