@@ -433,7 +433,7 @@ make of-whatsapp
 # Dashboard → Channels → WhatsApp → escanear QR (igual que WhatsApp Web)
 ```
 
-Las sesiones son **cross-channel**: el mismo usuario puede continuar una conversación en Telegram y retomar contexto en WhatsApp.
+WhatsApp está listo para activar con `make of-whatsapp` y escanear el QR (igual que WhatsApp Web). Para despliegue productivo se recomienda la Meta Business API con número dedicado. El canal completamente validado en producción es **Telegram**.
 
 ### Stack M3
 
